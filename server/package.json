@@ -11,6 +11,7 @@
     "verify": "cross-env RESEND_API_KEY= tsx scripts/verify.ts"
   },
   "dependencies": {
+    "@types/node": "^22.10.5",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
@@ -28,7 +29,6 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.7",
-    "@types/node": "^22.10.5",
     "@types/pg": "^8.11.10",
     "cross-env": "^7.0.3",
     "tsx": "^4.19.2",
