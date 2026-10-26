@@ -4,8 +4,9 @@ import { badRequest, conflict, unauthorized } from "../lib/errors";
 import { deriveNameFromEmail, isAllowedEmailDomain, normalizeEmail } from "../lib/emailValidation";
 import { hashPassword, verifyPassword } from "../lib/password";
 import { createAuthToken, hashAuthToken } from "../lib/tokens";
-import { sendPasswordResetEmail, sendVerificationEmail } from "./email";
+import { sendPasswordResetEmail, sendSetPasswordEmail, sendVerificationEmail } from "./email";
 import { SessionUser } from "./googleAuth";
+import { resolveVerifiedRole } from "./roleAssignment";
 
 // A fixed, valid hash checked whenever no real account/password exists, so login always pays
 // the same scrypt cost regardless of whether the email is registered — otherwise response time
@@ -42,7 +43,11 @@ async function issueUserToken(
   return token;
 }
 
-export type RegisterResult = { needsVerification: boolean; emailSent: boolean; user: SessionUser };
+export type RegisterResult = { needsVerification: true; emailSent: boolean; user: SessionUser };
+
+type RegisterOutcome =
+  | { kind: "new_account"; user: SessionUser }
+  | { kind: "add_password_to_existing"; user: SessionUser };
 
 export async function registerWithPassword(rawEmail: string, password: string): Promise<RegisterResult> {
   const email = normalizeEmail(rawEmail);
@@ -52,16 +57,15 @@ export async function registerWithPassword(rawEmail: string, password: string): 
 
   const passwordHash = await hashPassword(password);
 
-  const outcome = await withTransaction(async (client) => {
+  const outcome = await withTransaction<RegisterOutcome>(async (client) => {
     const existing = await client.query<{
       id: string;
       full_name: string;
       avatar_url: string | null;
       role: SessionUser["role"];
       password_hash: string | null;
-      email_verified_at: Date | null;
     }>(
-      `SELECT id, full_name, avatar_url, role, password_hash, email_verified_at
+      `SELECT id, full_name, avatar_url, role, password_hash
          FROM users WHERE email = $1 FOR UPDATE`,
       [email]
     );
@@ -72,61 +76,55 @@ export async function registerWithPassword(rawEmail: string, password: string): 
         throw conflict("email_registered", "An account with this email already exists. Try logging in instead.");
       }
 
-      // A Google-created account is adding a password — link, don't duplicate.
-      await client.query(`UPDATE users SET password_hash = $2 WHERE id = $1`, [row.id, passwordHash]);
+      // The account already exists (created through Google), so nothing about it changes here.
+      // The password the caller typed is thrown away: whoever submits this form has not proven
+      // they own the inbox, and applying it would hand them the account. The real owner gets an
+      // emailed link and chooses a password through the reset flow instead.
       return {
-        needsVerification: !row.email_verified_at,
+        kind: "add_password_to_existing",
         user: {
           userId: row.id,
           email,
           role: row.role,
           fullName: row.full_name,
           avatarUrl: row.avatar_url,
-        } satisfies SessionUser,
+        },
       };
     }
 
-    // Match upsertUserFromGoogle's behavior: a seeded counsellor email still gets the
-    // counsellor role even if they choose password auth instead of Google.
-    const counsellor = await client.query<{ id: string }>(
-      "SELECT id FROM counsellors WHERE lower(email) = $1",
-      [email]
-    );
-    const role: SessionUser["role"] = counsellor.rowCount ? "counsellor" : "student";
-
+    // Registration always creates a plain student. A counsellor record is NOT linked and the
+    // counsellor role is NOT granted here, because the email is still unproven at this point —
+    // otherwise anyone could register with a counsellor's address and squat their user_id
+    // binding. Both happen later, in resolveVerifiedRole(), once the email is verified.
     const fullName = deriveNameFromEmail(email);
     const inserted = await client.query<{ id: string }>(
       `INSERT INTO users (email, password_hash, full_name, role)
-       VALUES ($1, $2, $3, $4) RETURNING id`,
-      [email, passwordHash, fullName, role]
+       VALUES ($1, $2, $3, 'student') RETURNING id`,
+      [email, passwordHash, fullName]
     );
 
-    if (counsellor.rowCount) {
-      await client.query("UPDATE counsellors SET user_id = $1 WHERE id = $2", [
-        inserted.rows[0].id,
-        counsellor.rows[0].id,
-      ]);
-    }
-
     return {
-      needsVerification: true,
+      kind: "new_account",
       user: {
         userId: inserted.rows[0].id,
         email,
-        role,
+        role: "student",
         fullName,
         avatarUrl: null,
-      } satisfies SessionUser,
+      },
     };
   });
 
-  let emailSent = true;
-  if (outcome.needsVerification) {
-    const token = await issueUserToken(outcome.user.userId, "email_verification");
-    emailSent = await trySend("verification", email, () => sendVerificationEmail(email, token));
-  }
+  const emailSent =
+    outcome.kind === "new_account"
+      ? await trySend("verification", email, async () =>
+          sendVerificationEmail(email, await issueUserToken(outcome.user.userId, "email_verification"))
+        )
+      : await trySend("set password", email, async () =>
+          sendSetPasswordEmail(email, await issueUserToken(outcome.user.userId, "password_reset"))
+        );
 
-  return { ...outcome, emailSent };
+  return { needsVerification: true, emailSent, user: outcome.user };
 }
 
 export async function loginWithPassword(rawEmail: string, password: string): Promise<SessionUser> {
@@ -161,9 +159,12 @@ export async function loginWithPassword(rawEmail: string, password: string): Pro
     );
   }
 
-  await pool.query("UPDATE users SET last_login_at = now() WHERE id = $1", [row.id]);
+  // Recomputed on every login so allowlist changes and counsellor records created after this
+  // account was verified take effect, and so a stale stored 'admin' cannot persist.
+  const role = await resolveVerifiedRole(pool, row.id, email);
+  await pool.query("UPDATE users SET last_login_at = now(), role = $2 WHERE id = $1", [row.id, role]);
 
-  return { userId: row.id, email, role: row.role, fullName: row.full_name, avatarUrl: row.avatar_url };
+  return { userId: row.id, email, role, fullName: row.full_name, avatarUrl: row.avatar_url };
 }
 
 export async function verifyEmailToken(token: string): Promise<{ email: string }> {
@@ -187,12 +188,20 @@ export async function verifyEmailToken(token: string): Promise<{ email: string }
       throw badRequest("expired_token", "This verification link has expired");
     }
 
+    const userId = result.rows[0].user_id;
     const updated = await client.query<{ email: string }>(
       `UPDATE users SET email_verified_at = COALESCE(email_verified_at, now())
         WHERE id = $1 RETURNING email`,
-      [result.rows[0].user_id]
+      [userId]
     );
-    return { email: updated.rows[0].email };
+    const email = updated.rows[0].email;
+
+    // The email is proven as of now, so this is the first point at which an unclaimed
+    // counsellor record may be claimed and the counsellor/admin role granted.
+    const role = await resolveVerifiedRole(client, userId, email);
+    await client.query("UPDATE users SET role = $2 WHERE id = $1", [userId, role]);
+
+    return { email };
   });
 }
 

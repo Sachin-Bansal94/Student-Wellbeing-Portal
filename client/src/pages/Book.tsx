@@ -56,6 +56,7 @@ export default function Book() {
   const evening = activeDay?.slots.filter((slot) => !isMorning(slot.startsAt)) ?? [];
 
   const canGoBack = weekStart > todayISO();
+  const canGoForward = addDays(weekStart, 7) <= addDays(todayISO(), config?.bookingHorizonDays ?? 14);
   const pendingMinutes = config?.pendingExpiryMinutes ?? 10;
 
   async function handleRequest() {
@@ -153,7 +154,11 @@ export default function Book() {
         <span className="muted small">
           {days.length > 0 && `${formatDate(`${days[0].date}T06:00:00Z`)} onwards`}
         </span>
-        <button className="button ghost small" onClick={() => setWeekStart(addDays(weekStart, 7))}>
+        <button
+          className="button ghost small"
+          onClick={() => setWeekStart(addDays(weekStart, 7))}
+          disabled={!canGoForward}
+        >
           Next &rarr;
         </button>
       </div>

@@ -1,4 +1,9 @@
+// MUST stay first: rewrites DATABASE_URL to the test database before db/pool.ts creates the
+// pool, and refuses to run at all if no isolated test database is configured.
+import "./testEnv";
+
 import type { AddressInfo } from "net";
+import { startMailSink } from "./mailSink";
 import { pool } from "../src/db/pool";
 import { createApp } from "../src/app";
 import { getAvailability, resolveSlot, listCounsellors } from "../src/services/availability";
@@ -27,6 +32,36 @@ import { SessionPayload } from "../src/lib/tokens";
 
 let passed = 0;
 let failed = 0;
+
+/**
+ * Counsellor fixtures created by the role tests. These MUST be removed at the end of every run:
+ * counsellors are publicly listed (listCounsellors only filters on is_active), so leaving them
+ * behind would show fake counsellors to real students.
+ */
+const FIXTURE_COUNSELLOR_EMAILS = [
+  "counsellora@iitism.ac.in",
+  "counsellorb@iitism.ac.in",
+  "claimlater@iitism.ac.in",
+  "squatter@iitism.ac.in",
+];
+
+const FIXTURE_USER_EMAILS = [
+  "pwstudent1@iitism.ac.in",
+  "pwstudent2@iitism.ac.in",
+  "pwstudent3@iitism.ac.in",
+  "googleonlystudent@iitism.ac.in",
+  "mismatchtest@iitism.ac.in",
+  "ratelimittest@iitism.ac.in",
+  "verifyadmin@iitism.ac.in",
+  "staleadmin@iitism.ac.in",
+  "profilestudent@iitism.ac.in",
+  ...FIXTURE_COUNSELLOR_EMAILS,
+];
+
+async function clearFixtures(): Promise<void> {
+  await pool.query("DELETE FROM users WHERE email = ANY($1)", [FIXTURE_USER_EMAILS]);
+  await pool.query("DELETE FROM counsellors WHERE email = ANY($1)", [FIXTURE_COUNSELLOR_EMAILS]);
+}
 
 function check(name: string, condition: boolean, detail = "") {
   if (condition) {
@@ -64,17 +99,16 @@ async function main() {
     );
   }
 
+  const mailSink = await startMailSink();
+
   await pool.query("TRUNCATE scheduled_emails, appointments CASCADE");
 
   // Unlike makeStudent() below (an idempotent upsert), registerWithPassword() correctly refuses
   // to re-register an existing email — that's the point of the "duplicate registration" test —
   // so these fixtures must be reset on every run rather than reused across runs.
-  await pool.query(
-    `DELETE FROM users WHERE email IN (
-       'pwstudent1@iitism.ac.in', 'pwstudent2@iitism.ac.in', 'pwstudent3@iitism.ac.in',
-       'googleonlystudent@iitism.ac.in', 'mismatchtest@iitism.ac.in', 'ratelimittest@iitism.ac.in'
-     )`
-  );
+  // Safe to delete: these fixtures never hold appointments. Production code never deletes
+  // counsellors, because appointments cascade.
+  await clearFixtures();
 
   console.log("\n== slot generation ==");
   const counsellors = await listCounsellors();
@@ -747,10 +781,22 @@ async function main() {
   );
   const linkedCount = await pool.query("SELECT count(*)::int AS n FROM users WHERE email = 'pwstudent3@iitism.ac.in'");
   check("linking does not create a second row", linkedCount.rows[0].n === 1);
-  const linkedHashRow = await pool.query<{ password_hash: string | null }>(
-    "SELECT password_hash FROM users WHERE email = 'pwstudent3@iitism.ac.in'"
+  const linkedHashRow = await pool.query<{ password_hash: string | null; email_verified_at: Date | null }>(
+    "SELECT password_hash, email_verified_at FROM users WHERE email = 'pwstudent3@iitism.ac.in'"
   );
-  check("linking preserves the existing password hash", linkedHashRow.rows[0].password_hash !== null);
+  check(
+    "a password set before the email was ever verified is discarded once Google proves the inbox",
+    linkedHashRow.rows[0].password_hash === null
+  );
+  check("Google sign-in marks the email verified", linkedHashRow.rows[0].email_verified_at !== null);
+
+  let discardedPasswordRejected = false;
+  try {
+    await loginWithPassword("pwstudent3@iitism.ac.in", "password123");
+  } catch (err: any) {
+    discardedPasswordRejected = err.code === "unauthorized";
+  }
+  check("the discarded password can no longer log in", discardedPasswordRejected);
 
   const googleFirst = await upsertUserFromGoogle({
     sub: "google-onlystudent",
@@ -760,18 +806,35 @@ async function main() {
   });
   const passwordAdded = await registerWithPassword("googleonlystudent@iitism.ac.in", "password123");
   check(
-    "adding a password to an existing Google account links onto it, not a new account",
+    "asking to add a password to a Google account targets that same account, not a new one",
     passwordAdded.user.userId === googleFirst.userId
   );
   check(
-    "an already Google-verified account skips a redundant email verification",
-    passwordAdded.needsVerification === false
+    "adding a password to a Google account always requires proof of the inbox",
+    passwordAdded.needsVerification === true
   );
-  const canLoginImmediately = await loginWithPassword("googleonlystudent@iitism.ac.in", "password123");
-  check(
-    "the newly added password works immediately, no verification step required",
-    canLoginImmediately.email === "googleonlystudent@iitism.ac.in"
+  const untouched = await pool.query<{ password_hash: string | null }>(
+    "SELECT password_hash FROM users WHERE email = 'googleonlystudent@iitism.ac.in'"
   );
+  check("the typed password is not stored until the owner follows the emailed link", untouched.rows[0].password_hash === null);
+
+  let notLoggedInEarly = false;
+  try {
+    await loginWithPassword("googleonlystudent@iitism.ac.in", "password123");
+  } catch (err: any) {
+    notLoggedInEarly = err.code === "unauthorized";
+  }
+  check("that password does not log in before the owner confirms", notLoggedInEarly);
+
+  const setPasswordMail = await mailSink.waitFor(
+    (mail) => mail.subject?.startsWith("Finish adding a password") === true
+  );
+  const setPasswordToken = new URL(
+    (setPasswordMail.html as string).match(/href="([^"]+)"/)![1]
+  ).searchParams.get("token")!;
+  await resetPassword(setPasswordToken, "chosenbytheowner1");
+  const ownerLogin = await loginWithPassword("googleonlystudent@iitism.ac.in", "chosenbytheowner1");
+  check("the owner can set a password through the emailed link and then log in", ownerLogin.userId === googleFirst.userId);
 
   const sameGoogleAgain = await upsertUserFromGoogle({
     sub: "google-pwstudent3",
@@ -888,7 +951,288 @@ async function main() {
 
   await new Promise((resolve) => authServer.close(resolve));
 
+  console.log("\n== roles: authorization ==");
+
+  const roleApp = createApp();
+  const roleServer = roleApp.listen(0);
+  await new Promise((resolve) => roleServer.once("listening", resolve));
+  const { port: rolePort } = roleServer.address() as AddressInfo;
+  const apiBase = `http://127.0.0.1:${rolePort}/api`;
+
+  const as = (session: SessionPayload) => {
+    const cookie = `${SESSION_COOKIE}=${signSession(session)}`;
+    return (path: string, init?: RequestInit) =>
+      fetch(`${apiBase}${path}`, {
+        ...init,
+        headers: { "Content-Type": "application/json", Cookie: cookie, ...(init?.headers ?? {}) },
+      });
+  };
+
+  const plainStudent = await makeStudent("profilestudent@iitism.ac.in", "Profile Student");
+  const studentApi = as(plainStudent);
+
+  check("unauthenticated request to admin routes is 401", (await fetch(`${apiBase}/admin/counsellors`)).status === 401);
+  check("student cannot list counsellors as admin", (await studentApi("/admin/counsellors")).status === 403);
+  check(
+    "student cannot create a counsellor",
+    (
+      await studentApi("/admin/counsellors", {
+        method: "POST",
+        body: JSON.stringify({ fullName: "Should Not Exist" }),
+      })
+    ).status === 403
+  );
+  check("student cannot reach counsellor self-service", (await studentApi("/me/counsellor")).status === 403);
+
+  // A forged claim is the direct attack on the JWT-vs-DB question: the cookie is genuinely
+  // signed (so it passes verifySession) but asserts a role the database does not grant.
+  const forgedAdmin = as({ ...plainStudent, role: "admin" });
+  const forgedCounsellor = as({ ...plainStudent, role: "counsellor" });
+
+  check(
+    "a validly-signed JWT claiming role=admin does not grant admin access",
+    (await forgedAdmin("/admin/counsellors")).status === 403
+  );
+  check(
+    "a forged admin claim cannot create a counsellor",
+    (
+      await forgedAdmin("/admin/counsellors", {
+        method: "POST",
+        body: JSON.stringify({ fullName: "Forged" }),
+      })
+    ).status === 403
+  );
+  check(
+    "a validly-signed JWT claiming role=counsellor does not grant counsellor access",
+    (await forgedCounsellor("/me/counsellor")).status === 403
+  );
+  check(
+    "a forged counsellor claim cannot add availability",
+    (
+      await forgedCounsellor("/me/counsellor/availability-rules", {
+        method: "POST",
+        body: JSON.stringify({ weekday: 1, startTime: "09:00", endTime: "10:00" }),
+      })
+    ).status === 403
+  );
+
+  const noForgedCounsellor = await pool.query("SELECT 1 FROM counsellors WHERE full_name = 'Forged'");
+  check("the forged admin request created nothing", noForgedCounsellor.rowCount === 0);
+
+  console.log("\n== roles: ADMIN_EMAILS is authoritative ==");
+
+  // verifyadmin@ is in ADMIN_EMAILS for this run (set by the npm script), but its stored role is
+  // still 'student' — the allowlist alone must grant authority.
+  const allowlistAdmin = await makeStudent("verifyadmin@iitism.ac.in", "Allowlist Admin");
+  const adminApi = as({ ...allowlistAdmin, role: "student" });
+  check("allowlisted email gets admin authority even while stored role is student", (await adminApi("/admin/counsellors")).status === 200);
+
+  // The reverse: stored role says admin, but the email is not on the allowlist.
+  const staleAdmin = await makeStudent("staleadmin@iitism.ac.in", "Stale Admin");
+  await pool.query("UPDATE users SET role = 'admin' WHERE id = $1", [staleAdmin.userId]);
+  const staleApi = as({ ...staleAdmin, role: "admin" });
+  check(
+    "stored 'admin' without an allowlist entry is denied (revocation works, stickiness is gone)",
+    (await staleApi("/admin/counsellors")).status === 403
+  );
+
+  console.log("\n== roles: counsellor onboarding ==");
+
+  // Case A — an existing, email-verified account is linked and promoted immediately.
+  const futureCounsellor = await makeStudent("counsellora@iitism.ac.in", "Counsellor A");
+  await pool.query("UPDATE users SET email_verified_at = now() WHERE id = $1", [futureCounsellor.userId]);
+
+  const createA = await adminApi("/admin/counsellors", {
+    method: "POST",
+    body: JSON.stringify({ email: "counsellora@iitism.ac.in", fullName: "Counsellor A", slotMinutes: 20 }),
+  });
+  const createABody = await createA.json();
+  check("admin can create a counsellor", createA.status === 201, `got ${createA.status}`);
+  check("case A reports that an existing account was linked", createABody.linkedExistingUser === true);
+
+  const promotedRole = await pool.query<{ role: string }>("SELECT role FROM users WHERE id = $1", [
+    futureCounsellor.userId,
+  ]);
+  check("case A promotes the existing account to counsellor immediately", promotedRole.rows[0].role === "counsellor");
+
+  // Case B — no account yet: record is created unclaimed, and no user/password is fabricated.
+  const createB = await adminApi("/admin/counsellors", {
+    method: "POST",
+    body: JSON.stringify({ email: "claimlater@iitism.ac.in", fullName: "Claim Later" }),
+  });
+  const createBBody = await createB.json();
+  check("case B creates the counsellor without linking", createBBody.linkedExistingUser === false);
+  check("case B leaves the record unclaimed", createBBody.counsellor.linkedAccount === false);
+
+  const noUserCreated = await pool.query("SELECT 1 FROM users WHERE email = 'claimlater@iitism.ac.in'");
+  check("case B does not fabricate a user account", noUserCreated.rowCount === 0);
+
+  // The record is claimed only once the email is actually proven.
+  const claimed = await upsertUserFromGoogle({
+    sub: "google-claimlater",
+    email: "claimlater@iitism.ac.in",
+    name: "Claim Later",
+    picture: null,
+  });
+  check("a verified sign-in claims the waiting counsellor record", claimed.role === "counsellor");
+
+  console.log("\n== roles: counsellor record cannot be spoofed ==");
+
+  await adminApi("/admin/counsellors", {
+    method: "POST",
+    body: JSON.stringify({ email: "squatter@iitism.ac.in", fullName: "Squat Target" }),
+  });
+
+  // Someone registers with the counsellor's address but never proves ownership of the inbox.
+  const squat = await registerWithPassword("squatter@iitism.ac.in", "password123");
+  check("registering with a counsellor's email yields a plain student", squat.user.role === "student");
+
+  const squatLink = await pool.query<{ user_id: string | null }>(
+    "SELECT user_id FROM counsellors WHERE email = 'squatter@iitism.ac.in'"
+  );
+  check("an unverified registration does NOT claim the counsellor record", squatLink.rows[0].user_id === null);
+
+  const squatRole = await pool.query<{ role: string }>(
+    "SELECT role FROM users WHERE email = 'squatter@iitism.ac.in'"
+  );
+  check("an unverified registration does NOT gain the counsellor role", squatRole.rows[0].role === "student");
+
+  console.log("\n== roles: counsellor ownership ==");
+
+  const counsellorBUser = await makeStudent("counsellorb@iitism.ac.in", "Counsellor B");
+  await pool.query("UPDATE users SET email_verified_at = now() WHERE id = $1", [counsellorBUser.userId]);
+  await adminApi("/admin/counsellors", {
+    method: "POST",
+    body: JSON.stringify({ email: "counsellorb@iitism.ac.in", fullName: "Counsellor B" }),
+  });
+
+  const counsellorAApi = as({ ...futureCounsellor, role: "counsellor" });
+  const counsellorBApi = as({ ...counsellorBUser, role: "counsellor" });
+
+  const ruleResp = await counsellorAApi("/me/counsellor/availability-rules", {
+    method: "POST",
+    body: JSON.stringify({ weekday: 2, startTime: "10:00", endTime: "12:00" }),
+  });
+  const ruleBody = await ruleResp.json();
+  check("a counsellor can add a block to their own availability", ruleResp.status === 201, `got ${ruleResp.status}`);
+
+  const crossDelete = await counsellorBApi(
+    `/me/counsellor/availability-rules/${ruleBody.rule.id}`,
+    { method: "DELETE" }
+  );
+  check("counsellor B cannot delete counsellor A's block", crossDelete.status === 404);
+
+  const stillThere = await pool.query("SELECT 1 FROM availability_rules WHERE id = $1", [ruleBody.rule.id]);
+  check("counsellor A's block survives the cross-account delete attempt", stillThere.rowCount === 1);
+
+  check(
+    "a counsellor cannot create counsellors",
+    (
+      await counsellorAApi("/admin/counsellors", {
+        method: "POST",
+        body: JSON.stringify({ fullName: "Nope" }),
+      })
+    ).status === 403
+  );
+
+  console.log("\n== roles: deactivation semantics ==");
+
+  const counsellorAId = createABody.counsellor.id;
+  const deactivate = await adminApi(`/admin/counsellors/${counsellorAId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ isActive: false }),
+  });
+  check("admin can deactivate a counsellor", deactivate.status === 200);
+
+  const publicList = await listCounsellors();
+  check(
+    "a deactivated counsellor disappears from the public list",
+    !publicList.some((c) => c.id === counsellorAId)
+  );
+
+  let inactiveBookingRejected = false;
+  try {
+    await resolveSlot(counsellorAId, istToUtc(nextWeekdayISO(2, 2), "10:00"));
+  } catch (err: any) {
+    inactiveBookingRejected = err.code === "counsellor_inactive";
+  }
+  check("a deactivated counsellor cannot receive new bookings", inactiveBookingRejected);
+
+  check(
+    "a deactivated counsellor cannot modify availability",
+    (
+      await counsellorAApi("/me/counsellor/availability-rules", {
+        method: "POST",
+        body: JSON.stringify({ weekday: 3, startTime: "10:00", endTime: "11:00" }),
+      })
+    ).status === 403
+  );
+  check("a deactivated counsellor cannot use self-service at all", (await counsellorAApi("/me/counsellor")).status === 403);
+
+  const historyIntact = await pool.query("SELECT 1 FROM availability_rules WHERE id = $1", [ruleBody.rule.id]);
+  check("deactivation deletes nothing", historyIntact.rowCount === 1);
+
+  const reactivate = await adminApi(`/admin/counsellors/${counsellorAId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ isActive: true }),
+  });
+  check("admin can reactivate a counsellor", reactivate.status === 200);
+  check("reactivation restores self-service", (await counsellorAApi("/me/counsellor")).status === 200);
+
+  console.log("\n== roles: profile scoping ==");
+
+  const profileGet = await studentApi("/me/profile");
+  const profileBody = await profileGet.json();
+  check("a student can read their own profile", profileGet.status === 200);
+  check("the profile never includes a password hash", !JSON.stringify(profileBody).toLowerCase().includes("password"));
+
+  const patched = await studentApi("/me/profile", {
+    method: "PATCH",
+    body: JSON.stringify({ fullName: "Renamed Student", department: "Computer Science", phone: "9999999999" }),
+  });
+  check("a student can update their permitted fields", patched.status === 200, `got ${patched.status}`);
+
+  const emailAttempt = await studentApi("/me/profile", {
+    method: "PATCH",
+    body: JSON.stringify({ email: "someoneelse@iitism.ac.in" }),
+  });
+  check("a student cannot change their email through the profile", emailAttempt.status === 400);
+
+  const roleAttempt = await studentApi("/me/profile", {
+    method: "PATCH",
+    body: JSON.stringify({ role: "admin" }),
+  });
+  check("a student cannot escalate their role through the profile", roleAttempt.status === 400);
+
+  const unchanged = await pool.query<{ email: string; role: string }>(
+    "SELECT email, role FROM users WHERE id = $1",
+    [plainStudent.userId]
+  );
+  check(
+    "email and role are untouched after those attempts",
+    unchanged.rows[0].email === "profilestudent@iitism.ac.in" && unchanged.rows[0].role === "student"
+  );
+
+  const counsellorView = JSON.stringify(await listMyAppointments({ ...counsellorBUser, role: "counsellor" }));
+  check(
+    "a counsellor's appointment view exposes no phone/department/admission number",
+    !counsellorView.includes("phone") &&
+      !counsellorView.includes("department") &&
+      !counsellorView.includes("admission")
+  );
+
+  await new Promise((resolve) => roleServer.close(resolve));
+
+  // Leave no fake counsellors behind: counsellors are publicly listed, so fixtures left in the
+  // database would be visible to real students.
+  await clearFixtures();
+  const leftovers = await pool.query("SELECT 1 FROM counsellors WHERE email = ANY($1)", [
+    FIXTURE_COUNSELLOR_EMAILS,
+  ]);
+  check("the suite leaves no test counsellors in the database", leftovers.rowCount === 0);
+
   console.log(`\n${passed} passed, ${failed} failed\n`);
+  await mailSink.close();
   await pool.end();
   process.exit(failed > 0 ? 1 : 0);
 }

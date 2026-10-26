@@ -6,6 +6,7 @@ import { createConfirmationToken, hashConfirmationToken } from "../lib/tokens";
 import { resolveSlot } from "./availability";
 import {
   AppointmentEmailContext,
+  CancelledBy,
   sendBookingConfirmed,
   sendCancellation,
   sendConfirmationRequest,
@@ -14,6 +15,7 @@ import {
 import { SessionPayload } from "../lib/tokens";
 
 const UNIQUE_VIOLATION = "23505";
+const MAX_UPCOMING_PER_STUDENT = 2;
 
 export type AppointmentRow = {
   id: string;
@@ -87,17 +89,6 @@ export async function createBooking(
 
   const { endsAt } = await resolveSlot(counsellorId, startsAt);
 
-  const active = await pool.query(
-    `SELECT 1 FROM appointments
-      WHERE student_id = $1
-        AND status IN ('pending', 'confirmed')
-        AND starts_at > now()`,
-    [session.userId]
-  );
-  if (active.rowCount && active.rowCount >= 2) {
-    throw conflict("too_many_active", "You already have two upcoming appointments");
-  }
-
   const { token, hash } = createConfirmationToken();
   const expiresAt = new Date(Date.now() + env.PENDING_EXPIRY_MINUTES * 60_000);
 
@@ -105,6 +96,30 @@ export async function createBooking(
 
   try {
     appointmentId = await withTransaction(async (client) => {
+      // Serialises one student's bookings so two parallel requests cannot both pass the
+      // "two upcoming appointments" check. Slot races between different students are still
+      // settled by the unique index, not by this lock.
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [session.userId]);
+
+      const active = await client.query(
+        `SELECT 1 FROM appointments
+          WHERE student_id = $1
+            AND starts_at > now()
+            AND (status = 'confirmed' OR (status = 'pending' AND confirmation_expires_at > now()))`,
+        [session.userId]
+      );
+      if (active.rowCount && active.rowCount >= MAX_UPCOMING_PER_STUDENT) {
+        throw conflict("too_many_active", "You already have two upcoming appointments");
+      }
+
+      // A hold that ran out of time but has not been swept yet should not block the slot.
+      await client.query(
+        `UPDATE appointments SET status = 'expired'
+          WHERE counsellor_id = $1 AND starts_at = $2
+            AND status = 'pending' AND confirmation_expires_at < now()`,
+        [counsellorId, startsAt]
+      );
+
       const inserted = await client.query<{ id: string }>(
         `INSERT INTO appointments
            (counsellor_id, student_id, starts_at, ends_at, status, student_note,
@@ -253,6 +268,40 @@ export async function resendConfirmation(
   return { expiresAt, emailSent };
 }
 
+async function applyCancellation(
+  client: PoolClient,
+  appointmentId: string,
+  cancelledBy: string
+): Promise<void> {
+  await client.query(
+    `UPDATE appointments
+        SET status = 'cancelled', cancelled_at = now(), cancelled_by = $2,
+            confirmation_token_hash = NULL, confirmation_expires_at = NULL
+      WHERE id = $1`,
+    [appointmentId, cancelledBy]
+  );
+
+  await client.query(
+    `UPDATE scheduled_emails SET status = 'cancelled'
+      WHERE appointment_id = $1 AND status = 'pending'`,
+    [appointmentId]
+  );
+}
+
+async function notifyCancellation(
+  ctx: AppointmentEmailContext,
+  cancelledBy: CancelledBy,
+  appointmentId: string
+): Promise<void> {
+  // The cancellation already committed — a failed notification must not make a successfully
+  // cancelled appointment look like a failed request.
+  try {
+    await sendCancellation(ctx, cancelledBy);
+  } catch (err) {
+    console.error(`failed to send cancellation email for appointment ${appointmentId}`, err);
+  }
+}
+
 export async function cancelAppointment(session: SessionPayload, appointmentId: string): Promise<void> {
   const ctx = await loadEmailContext(appointmentId);
 
@@ -297,33 +346,42 @@ export async function cancelAppointment(session: SessionPayload, appointmentId: 
       }
     }
 
-    await client.query(
-      `UPDATE appointments
-          SET status = 'cancelled', cancelled_at = now(), cancelled_by = $2,
-              confirmation_token_hash = NULL, confirmation_expires_at = NULL
-        WHERE id = $1`,
-      [appointmentId, session.userId]
-    );
-
-    await client.query(
-      `UPDATE scheduled_emails SET status = 'cancelled'
-        WHERE appointment_id = $1 AND status = 'pending'`,
-      [appointmentId]
-    );
-
+    await applyCancellation(client, appointmentId, session.userId);
     return isCounsellor;
   });
 
-  // The cancellation already committed above — a failed notification must not make a
-  // successfully cancelled appointment look like a failed request.
-  try {
-    await sendCancellation(ctx, cancelledByCounsellor);
-  } catch (err) {
-    console.error(`failed to send cancellation email for appointment ${appointmentId}`, err);
-  }
+  await notifyCancellation(ctx, cancelledByCounsellor ? "counsellor" : "student", appointmentId);
 }
 
-export async function listMyAppointments(session: SessionPayload): Promise<unknown[]> {
+/**
+ * Administrator cancellation. Callers must have passed requireRole("admin"), which reads
+ * authority fresh from the database; the role claim inside a session cookie is never enough.
+ * Admins can cancel at any time, including inside the student cancellation window.
+ */
+export async function cancelAppointmentAsAdmin(adminUserId: string, appointmentId: string): Promise<void> {
+  const ctx = await loadEmailContext(appointmentId);
+
+  await withTransaction(async (client) => {
+    const existing = await client.query<{ status: string }>(
+      "SELECT status FROM appointments WHERE id = $1 FOR UPDATE",
+      [appointmentId]
+    );
+    if (!existing.rowCount) throw notFound("Appointment not found");
+    if (!["pending", "confirmed"].includes(existing.rows[0].status)) {
+      throw badRequest("not_cancellable", "This appointment is not active");
+    }
+    await applyCancellation(client, appointmentId, adminUserId);
+  });
+
+  await notifyCancellation(ctx, "admin", appointmentId);
+}
+
+export type AppointmentScope = "upcoming" | "past" | "all";
+
+export async function listMyAppointments(
+  session: SessionPayload,
+  scope: AppointmentScope = "all"
+): Promise<unknown[]> {
   if (session.role === "counsellor") {
     const result = await pool.query(
       `SELECT a.id, a.starts_at, a.ends_at, a.status, a.student_note,
@@ -341,13 +399,22 @@ export async function listMyAppointments(session: SessionPayload): Promise<unkno
     return result.rows;
   }
 
+  // "all" returns the student's complete history; the previous hard 30-day window silently
+  // truncated it. Students still only ever see their own rows.
+  const scopeFilter =
+    scope === "upcoming"
+      ? "AND a.starts_at >= now()"
+      : scope === "past"
+        ? "AND a.starts_at < now()"
+        : "";
+
   const result = await pool.query(
     `SELECT a.id, a.starts_at, a.ends_at, a.status, a.student_note, a.confirmation_expires_at,
             c.full_name AS counsellor_name, c.title AS counsellor_title, c.venue, c.room
        FROM appointments a
        JOIN counsellors c ON c.id = a.counsellor_id
       WHERE a.student_id = $1
-        AND a.starts_at > now() - interval '30 days'
+        ${scopeFilter}
       ORDER BY a.starts_at DESC`,
     [session.userId]
   );
