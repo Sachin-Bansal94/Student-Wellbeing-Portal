@@ -1,7 +1,8 @@
-import { Router } from "express";
+import { Request, Router } from "express";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { asyncHandler } from "../lib/asyncHandler";
+import { validateUuidParams } from "../lib/params";
 import { badRequest, unauthorized } from "../lib/errors";
 import { requireAuth } from "../middleware/auth";
 import {
@@ -14,11 +15,16 @@ import {
 
 const router = Router();
 
+validateUuidParams(router, "id");
+
+const perUser = (req: Request) => req.session?.userId ?? req.ip ?? "unknown";
+
 const bookingLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
   limit: 10,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: perUser,
   message: { error: { code: "rate_limited", message: "Too many booking attempts. Try again later." } },
 });
 
@@ -27,6 +33,7 @@ const resendLimiter = rateLimit({
   limit: 5,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: perUser,
   message: { error: { code: "rate_limited", message: "Too many resend attempts. Try again later." } },
 });
 
@@ -99,12 +106,15 @@ router.post(
   })
 );
 
+const scopeSchema = z.enum(["upcoming", "past", "all"]).optional();
+
 router.get(
   "/mine",
   requireAuth,
   asyncHandler(async (req, res) => {
     if (!req.session) throw unauthorized();
-    const appointments = await listMyAppointments(req.session);
+    const scope = scopeSchema.safeParse(req.query.scope);
+    const appointments = await listMyAppointments(req.session, scope.success ? scope.data : "all");
     res.json({ appointments });
   })
 );

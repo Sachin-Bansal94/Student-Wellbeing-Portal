@@ -1,0 +1,11 @@
+{
+  "name": "wellbeing-portal-e2e",
+  "private": true,
+  "scripts": {
+    "sink": "node mail-sink.js",
+    "test": "node walkthrough.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.0"
+  }
+}

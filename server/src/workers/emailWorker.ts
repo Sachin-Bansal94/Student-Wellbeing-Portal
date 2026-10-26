@@ -6,7 +6,7 @@ const POLL_INTERVAL_MS = 60_000;
 const BATCH_SIZE = 10;
 const MAX_ATTEMPTS = 5;
 
-async function processDueEmails(): Promise<void> {
+export async function processDueEmails(): Promise<void> {
   await withTransaction(async (client) => {
     const due = await client.query<{
       id: string;

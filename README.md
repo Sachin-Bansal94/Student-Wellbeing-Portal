@@ -1,51 +1,65 @@
-# Student Wellbeing Appointments — IIT (ISM) Dhanbad
+# Student Wellbeing Portal, IIT (ISM) Dhanbad
 
-A booking platform for the on-campus counsellors at the Health Center. Students sign in with
-their institute Google account, see each counsellor's open slots for the week, and book a free
-20-minute session. Bookings are held until the student confirms them from an email link, and
-reminders go out 24 hours and 1 hour before the session.
+A booking portal for the on campus counsellors at the Health Center. Students register with
+their institute email (or sign in with Google), see every counsellor's free slots, book a free
+20 minute session, and confirm it from a link sent to their email. Counsellors sign in and manage
+their own schedule. Admins manage counsellors and can see and cancel any booking.
+
+## Who can do what
+
+| Role | How they get it | What they can do |
+| --- | --- | --- |
+| Student | Anyone who registers with an `@iitism.ac.in` email, or signs in with Google | View counsellors and open slots, book, confirm from email, cancel (up to 4 hours before), edit own profile |
+| Counsellor | An admin adds the counsellor record, and the person signs in with that same verified email | See own schedule, set weekly hours, add leave days and extra hours, cancel own sessions |
+| Admin | The email is listed in `ADMIN_EMAILS` on the server | Add and edit counsellors, edit their hours, deactivate them, see all bookings, cancel any booking, see overview numbers |
+
+Nobody can give themselves a higher role. Roles are decided on the server.
 
 ## How it works
 
-**Availability is a rule, not a list of rows.** Each counsellor has weekly `availability_rules`
-(weekday + start/end time). Concrete slots are computed on request from those rules, minus any
-`availability_exceptions` (leave, one-off extra hours), minus slots already taken. Nothing to
-regenerate, nothing to drift.
+**Registration is limited to the college.** The email domain must be exactly `iitism.ac.in`.
+Look alike domains such as `iitism.ac.in.fake.com` are refused. The check runs on the server for
+the form, for password login, and for Google (on the signed Google token, never on a hint from
+the browser). A new password account must prove it owns the inbox before it can sign in.
 
-**Double-booking is impossible at the database level.** A partial unique index on
-`(counsellor_id, starts_at)` covering the live statuses means two students clicking the same slot
-in the same instant can never both win — Postgres rejects the second insert and the API returns
-`slot_taken`. This is enforced by the database, not by an application-level check that a race
-could slip past.
+**Availability is a rule, not a list of rows.** Each counsellor has weekly hours plus optional
+leave days and extra hours. Slots are worked out when a student asks, so there is nothing to
+regenerate and nothing to drift.
 
-**Every booking is validated against the real schedule.** The server never trusts a timestamp
-from the client: `resolveSlot` recomputes the counsellor's slots for that date and rejects
-anything off-grid, outside working hours, past the booking horizon, or inside the lead time.
+**Double booking cannot happen.** A unique index in the database covers
+`(counsellor_id, starts_at)` for live bookings. If two students click the same slot at the same
+moment, the database rejects the second one and the app says the slot was just taken. A student
+may also hold at most 2 upcoming bookings.
 
-**The confirmation step.** Booking creates a `pending` appointment holding the slot, and emails
-a signed single-use token link. Confirming flips it to `confirmed` and schedules the reminders.
-Anything still pending after 30 minutes is swept back into the pool.
+**Every booking is checked against the real schedule.** The server never trusts a time sent by
+the browser. It rebuilds that counsellor's slots and rejects anything off the grid, outside
+working hours, too soon, or too far ahead.
 
-**Reminders survive restarts.** Scheduled mail lives in a `scheduled_emails` table polled every
-minute with `FOR UPDATE SKIP LOCKED`, not in in-memory timers that vanish when the process dies.
+**Booking needs an email confirmation.** Booking creates a `pending` hold for 10 minutes and sends
+a single use link. Opening the link is the only thing that turns a hold into a `confirmed`
+booking. If it is not confirmed in time, the slot goes back to everyone. After confirming, the
+student gets a second email with a calendar file, and reminders follow 24 hours and 1 hour before.
 
-**Privacy is built in.** The availability endpoint returns only free/busy — never who booked a
-slot. Students see only their own appointments; counsellors see only their own schedule.
+**Reminders survive restarts.** Scheduled mail lives in a table that is checked every minute,
+not in timers that vanish when the server restarts.
+
+**Privacy.** The availability screen shows free or busy only, never who booked. Students see
+only their own bookings. Counsellors see only their own schedule. The note a student writes for
+the counsellor is shown to that counsellor only, and not to admins.
 
 ## Stack
 
-React 18 + Vite + TypeScript · Node/Express + TypeScript · PostgreSQL (raw SQL via `pg`) ·
-Google Identity Services · Resend for transactional email.
+React 18, Vite, TypeScript | Node, Express, TypeScript | PostgreSQL with plain SQL (`pg`) |
+Google Identity Services | SMTP (nodemailer) or Resend for email.
 
 ## Running it locally
 
-You need Node 18+ and a Postgres database. Either a local Postgres install or a free Neon
-database works — all you need is the connection string.
+You need Node 18 or newer and PostgreSQL.
 
 ```bash
 # 1. Backend
 cd server
-copy .env.example .env       # cp on macOS/Linux
+cp .env.example .env         # on Windows: copy .env.example .env
 npm install
 npm run migrate              # creates the tables
 npm run seed                 # loads the three Health Center counsellors
@@ -57,113 +71,148 @@ npm install
 npm run dev                  # http://localhost:5173
 ```
 
-Minimum `.env` to get running — everything else has a working default:
+Smallest `.env` that works (everything else has a default):
 
 ```
-DATABASE_URL=postgresql://user:password@host:5432/wellbeing
+DATABASE_URL=postgresql://user:password@localhost:5432/wellbeing
 JWT_SECRET=any-long-random-string-at-least-16-chars
 CONFIRMATION_TOKEN_SECRET=another-long-random-string-at-least-16
+AUTH_TOKEN_SECRET=a-third-long-random-string-at-least-16
 ALLOW_DEV_LOGIN=true
+ADMIN_EMAILS=your.name@iitism.ac.in
 ```
 
-### Testing without Google or Resend
+Editing `.env` needs a full restart of the backend.
 
-`ALLOW_DEV_LOGIN=true` puts a dev sign-in box on the login page: type any `@iitism.ac.in`
-address and you get a session, no Google account needed. It is refused outright when
-`NODE_ENV=production`, the route 404s when the flag is off, and non-college addresses are
-rejected either way.
+### Working without Google or real email
 
-With `RESEND_API_KEY` blank, emails are not sent — the confirmation link is printed to the
-server console instead, so you can paste it into the browser. You can also confirm from the
-**My appointments** page without touching the link at all.
+`ALLOW_DEV_LOGIN=true` adds a box on the login page where any `@iitism.ac.in` address signs in
+with no password. The server refuses to start with it on when `NODE_ENV=production`.
 
-### Automated checks
+With no email settings, no email is sent. Every link (verify, confirm, reset) is printed in the
+server console, and you open it in the browser. There is no button in the app that skips the
+confirmation link, on purpose.
+
+### Sending real email
+
+Pick one:
+
+1. **SMTP, easiest.** For Gmail, turn on 2 step verification, create an app password, then set
+   `SMTP_HOST=smtp.gmail.com`, `SMTP_PORT=587`, `SMTP_USER=you@gmail.com`, `SMTP_PASS=<app password>`
+   and `MAIL_FROM=IIT ISM Wellbeing <you@gmail.com>`. This delivers to any student.
+2. **Resend.** Set `RESEND_API_KEY`. Resend only delivers to arbitrary addresses after you verify
+   a sending domain, so it is not suitable until the college gives you a domain.
+
+If `SMTP_HOST` is set it is used and Resend is ignored.
+
+### Tests
 
 ```bash
 cd server
-npm run verify
+npm run migrate:test && npm run seed:test   # once, builds the separate test database
+npm run verify                              # 136 + 121 checks
 ```
 
-29 checks covering slot generation, off-grid and out-of-hours rejection, the concurrent
-double-booking race, single-use confirmation tokens, the cancellation window, and the privacy
-guarantees. It truncates the `appointments` table first, so run it against a development
-database, never production.
+`verify` runs two suites against `TEST_DATABASE_URL` and a built in fake mail server. It refuses to
+run against your real database. It covers slot generation, the double booking race, the
+confirmation link rules, the cancellation window, all password flows, Google account linking,
+role rules, privacy, rate limits, email escaping, and the admin tools. Run it after any change to
+booking or sign in.
+
+The browser walkthrough in `e2e/` drives the real screens for a student, a counsellor and an
+admin (37 checks). See `e2e/README.md`.
 
 ### Environment
 
 | Variable | What it is |
 | --- | --- |
 | `DATABASE_URL` | Postgres connection string |
+| `TEST_DATABASE_URL` | A separate database used only by `npm run verify` |
 | `GOOGLE_CLIENT_ID` | OAuth client ID from Google Cloud Console |
-| `ALLOWED_EMAIL_DOMAIN` | `iitism.ac.in` — anything else is rejected server-side |
-| `JWT_SECRET` | Long random string for session cookies |
-| `CONFIRMATION_TOKEN_SECRET` | Long random string for confirmation link tokens |
-| `ALLOW_DEV_LOGIN` | `true` enables password-free sign-in for local testing. Must be `false` in production |
-| `RESEND_API_KEY` | Leave blank in development — emails print to the console instead |
-| `MAIL_FROM` | Verified sender on your Resend domain |
-| `SLOT_MINUTES` | 20 (capped at 20 by validation) |
-| `MIN_BOOKING_LEAD_MINUTES` | How far ahead a student must book (default 60) |
-| `PENDING_EXPIRY_MINUTES` | How long an unconfirmed slot is held (default 30) |
-| `CANCELLATION_CUTOFF_HOURS` | Self-cancel window (default 4) |
-| `BOOKING_HORIZON_DAYS` | How far into the future slots are shown (default 14) |
+| `ALLOWED_EMAIL_DOMAIN` | `iitism.ac.in`. Anything else is rejected on the server |
+| `ADMIN_EMAILS` | Comma separated list of admin emails. Removing one removes admin at once |
+| `JWT_SECRET`, `CONFIRMATION_TOKEN_SECRET`, `AUTH_TOKEN_SECRET` | Three different long random strings |
+| `ALLOW_DEV_LOGIN` | `true` only on your own machine |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS` | Send mail over SMTP |
+| `RESEND_API_KEY` | Send mail with Resend (needs a verified domain) |
+| `MAIL_FROM` | The From address on every email |
+| `CLIENT_ORIGIN` | The address of the website, used for CORS and email links |
+| `SLOT_MINUTES` | 20 (cannot be more) |
+| `MIN_BOOKING_LEAD_MINUTES` | Booking must be at least this far ahead (60) |
+| `PENDING_EXPIRY_MINUTES` | How long an unconfirmed hold lasts (10) |
+| `CANCELLATION_CUTOFF_HOURS` | Students cannot cancel inside this window (4) |
+| `BOOKING_HORIZON_DAYS` | How far ahead slots show (14) |
+| `EMAIL_VERIFICATION_EXPIRY_MINUTES` | Verify link lifetime (1440) |
+| `PASSWORD_RESET_EXPIRY_MINUTES` | Reset link lifetime (60) |
 
 ### Google OAuth setup
 
-In the Google Cloud Console, create an **OAuth 2.0 Client ID** of type *Web application*:
+In Google Cloud Console create an **OAuth 2.0 Client ID** of type Web application. Add
+`http://localhost:5173` and your real website address under Authorised JavaScript origins. No
+redirect address is needed. Put the client ID in `GOOGLE_CLIENT_ID`.
 
-- Authorised JavaScript origins: `http://localhost:5173` and your production URL
-- No redirect URI needed — this uses Google Identity Services, which returns an ID token
-  directly to the page
+## Counsellors
 
-The domain restriction is enforced **server-side** on the verified ID token (`email_verified`
-plus the domain check). The `hosted_domain` hint on the client is convenience only and is never
-trusted.
-
-## Counsellor accounts
-
-Counsellors are seeded, not self-registered. `server/src/db/seed.ts` holds the three Health
-Center counsellors and their weekly hours; when a seeded email signs in with Google, that account
-is automatically linked and given the `counsellor` role.
+The three Health Center counsellors are loaded by `npm run seed`. After that, admins manage
+everything from the **Admin** area, so the seed file is only the starting point.
 
 | Counsellor | Days | Hours |
 | --- | --- | --- |
-| Ms. Aishwarya Rao, Psychologist (M.A.) | Mon–Fri | 9:30–13:30, 15:30–19:30 |
-| Ms. Neethu AT, Psychologist (M.A.) | Mon–Sat | 9:30–13:30, 15:30–19:30 |
-| Dr. Shilpi Kumari, M.D. (Psychiatrist) | Thu | 15:30–17:30 |
+| Ms. Aishwarya Rao, Psychologist (M.A.) | Mon to Fri | 9:30 to 13:30, 15:30 to 19:30 |
+| Ms. Neethu AT, Psychologist (M.A.) | Mon to Sat | 9:30 to 13:30, 15:30 to 19:30 |
+| Dr. Shilpi Kumari, M.D. (Psychiatrist) | Thu | 15:30 to 17:30 |
 
-Dr. Shilpi Kumari has no email listed on the institute page, so her row is seeded without one.
-Add it in `seed.ts` and re-run `npm run seed` to let her sign in and see her schedule.
-
-To change hours, edit the seed file and re-run it, or insert into `availability_rules` directly.
-For leave or one-off changes, insert into `availability_exceptions` (`kind = 'blocked'` with no
-times blocks the whole day; `kind = 'extra'` adds hours).
+Dr. Shilpi Kumari has no email on the institute page. An admin can add one in the Admin area.
+Counsellors are never deleted, only deactivated, so past bookings are kept.
 
 ## API
 
-| Method | Route | Notes |
-| --- | --- | --- |
-| `POST` | `/api/auth/google` | Exchange a Google ID token for a session cookie |
-| `GET` | `/api/auth/me` | Current user |
-| `POST` | `/api/auth/logout` | Clear the session |
-| `GET` | `/api/counsellors` | Public list |
-| `GET` | `/api/counsellors/:id/availability` | Auth required. `?from=YYYY-MM-DD&days=7` |
-| `POST` | `/api/appointments` | Book. Returns a `pending` appointment |
-| `POST` | `/api/appointments/confirm` | Confirm with the emailed token |
-| `POST` | `/api/appointments/:id/confirm` | Confirm from inside the app |
-| `POST` | `/api/appointments/:id/cancel` | Student or the counsellor |
-| `GET` | `/api/appointments/mine` | Student's bookings, or counsellor's schedule |
+| Method | Route | Who | Notes |
+| --- | --- | --- | --- |
+| `POST` | `/api/auth/register` | Public | Needs an institute email. Sends a verify link |
+| `POST` | `/api/auth/verify-email` | Public | Uses the emailed token |
+| `POST` | `/api/auth/login` | Public | Email and password |
+| `POST` | `/api/auth/google` | Public | Google ID token |
+| `POST` | `/api/auth/resend-verification`, `/forgot-password`, `/reset-password` | Public | Always answer the same way |
+| `GET` | `/api/auth/me`, `/api/auth/config` | Session, public | Current user, public settings |
+| `POST` | `/api/auth/logout` | Any | |
+| `GET` | `/api/counsellors` | Public | List |
+| `GET` | `/api/counsellors/:id/availability` | Signed in | `?from=YYYY-MM-DD&days=7`. Free or busy only |
+| `POST` | `/api/appointments` | Student | Creates a pending hold |
+| `POST` | `/api/appointments/confirm` | Anyone with the link | Needs the emailed token. No sign in needed, so it works from any device |
+| `POST` | `/api/appointments/:id/resend` | Owner | Sends the confirm email again |
+| `POST` | `/api/appointments/:id/cancel` | Owner or counsellor | |
+| `GET` | `/api/appointments/mine` | Signed in | `?scope=upcoming,past,all` |
+| `GET`, `PATCH` | `/api/me/profile` | Signed in | |
+| `*` | `/api/me/counsellor/...` | Counsellor | Own hours, leave and extra hours |
+| `*` | `/api/admin/counsellors/...` | Admin | Add, edit, hours, leave |
+| `GET` | `/api/admin/stats` | Admin | Overview numbers |
+| `GET` | `/api/admin/appointments` | Admin | Filter by scope, status, counsellor |
+| `POST` | `/api/admin/appointments/:id/cancel` | Admin | Emails student and counsellor |
 
 ## Before going live
 
-- **Set `ALLOW_DEV_LOGIN=false`.** The server refuses to start with it on under
-  `NODE_ENV=production`, but do not rely on that as the only guard
-- Set a real `RESEND_API_KEY` and verify your sending domain, or reminders will only be logged
-- Put the API behind HTTPS — session cookies switch to `secure` + `SameSite=None` in production
-- Set `CLIENT_ORIGIN` to the deployed frontend URL so CORS and confirmation links are correct
-- Run `npm run build` in both folders; serve `client/dist` as static files
-- Consider a retention policy for `student_note`, since students may write sensitive things there
+- Rotate every secret that was ever in a shared `.env` file (database password, Resend key,
+  token secrets). Never commit `.env`.
+- Set `ALLOW_DEV_LOGIN=false` and `NODE_ENV=production`.
+- Set `ADMIN_EMAILS` to the real operators.
+- Set up real email (SMTP or a verified Resend domain).
+- Serve the website and the API from the same domain if you can (for example the website at
+  `/` and the API at `/api`). Cookies are then first party and sign in is far more reliable on
+  phones. If they must be on different domains, use HTTPS on both and set `CLIENT_ORIGIN`.
+- Run `npm run build` in both folders and serve `client/dist` as static files.
+- Decide how long `student_note` text is kept.
+
+## Known limits
+
+- An admin who is also a counsellor gets the admin area, not the counsellor dashboard.
+- Changing a password does not sign out other devices that are already signed in.
+- Registering with an email that already has a password account says so. Sign in and reset are
+  the safe paths, but this does show that the email is registered.
+- Google sign in and real email delivery need internet access and credentials, so they are
+  tested by hand with the checklist in the requirements document.
 
 ## Not built yet
 
-Admin panel for managing counsellors, counsellor-facing UI for editing their own availability
-and marking leave, rescheduling, and waitlists for full days.
+Rescheduling, waitlists for full days, a retention rule for `student_note`, no show tracking, and
+exportable reports.

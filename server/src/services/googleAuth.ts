@@ -4,6 +4,7 @@ import { withTransaction } from "../db/pool";
 import { forbidden, unauthorized } from "../lib/errors";
 import { isAllowedEmailDomain, normalizeEmail } from "../lib/emailValidation";
 import { SessionPayload } from "../lib/tokens";
+import { resolveVerifiedRole } from "./roleAssignment";
 
 const client = new OAuth2Client(env.GOOGLE_CLIENT_ID);
 
@@ -56,45 +57,45 @@ export type SessionUser = SessionPayload & {
 
 export async function upsertUserFromGoogle(profile: GoogleProfile): Promise<SessionUser> {
   return withTransaction(async (db) => {
-    const counsellor = await db.query<{ id: string }>(
-      "SELECT id FROM counsellors WHERE lower(email) = $1",
-      [profile.email]
-    );
-    const role = counsellor.rowCount ? "counsellor" : "student";
-
+    // Google has already proven this email (email_verified checked in verifyGoogleCredential),
+    // so the row is created/updated first, then the role is recomputed from scratch.
     const upserted = await db.query<{
       id: string;
       email: string;
       full_name: string;
       avatar_url: string | null;
-      role: SessionPayload["role"];
     }>(
       `INSERT INTO users (google_sub, email, full_name, avatar_url, role, last_login_at, email_verified_at)
-       VALUES ($1, $2, $3, $4, $5, now(), now())
+       VALUES ($1, $2, $3, $4, 'student', now(), now())
        ON CONFLICT (email) DO UPDATE
          SET google_sub = EXCLUDED.google_sub,
-             full_name = EXCLUDED.full_name,
+             full_name = CASE WHEN users.google_sub IS NULL THEN EXCLUDED.full_name ELSE users.full_name END,
              avatar_url = EXCLUDED.avatar_url,
-             role = CASE WHEN users.role = 'admin' THEN users.role ELSE EXCLUDED.role END,
              last_login_at = now(),
+             password_hash = CASE WHEN users.email_verified_at IS NULL THEN NULL ELSE users.password_hash END,
              email_verified_at = COALESCE(users.email_verified_at, now())
-       RETURNING id, email, full_name, avatar_url, role`,
-      [profile.sub, profile.email, profile.name, profile.picture, role]
+       RETURNING id, email, full_name, avatar_url`,
+      [profile.sub, profile.email, profile.name, profile.picture]
     );
 
     const user = upserted.rows[0];
 
-    if (counsellor.rowCount) {
-      await db.query("UPDATE counsellors SET user_id = $1 WHERE id = $2", [
-        user.id,
-        counsellor.rows[0].id,
-      ]);
-    }
+    // A password set on an account whose email was never verified was chosen by someone who had
+    // not proven they own the inbox. Google has now proven it, so that password is discarded
+    // above and any verification link still in flight is retired here.
+    await db.query(
+      "DELETE FROM user_tokens WHERE user_id = $1 AND purpose = 'email_verification'",
+      [user.id]
+    );
+
+    // Recomputed every login, never sticky: an email removed from ADMIN_EMAILS is demoted here.
+    const role = await resolveVerifiedRole(db, user.id, user.email);
+    await db.query("UPDATE users SET role = $2 WHERE id = $1", [user.id, role]);
 
     return {
       userId: user.id,
       email: user.email,
-      role: user.role,
+      role,
       fullName: user.full_name,
       avatarUrl: user.avatar_url,
     };

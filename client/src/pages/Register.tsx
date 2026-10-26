@@ -1,12 +1,11 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useAuth } from "../AuthContext";
 import { GoogleSignInButton } from "../components/GoogleSignInButton";
 import { ApiError } from "../api";
 
 export default function Register() {
   const { config, register } = useAuth();
-  const navigate = useNavigate();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -21,11 +20,7 @@ export default function Register() {
     setError(null);
     try {
       const result = await register(email.trim(), password, confirmPassword);
-      if (result.needsVerification) {
-        setRegistered({ email: result.email, emailSent: result.emailSent });
-      } else {
-        navigate("/");
-      }
+      setRegistered({ email: result.email, emailSent: result.emailSent });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not create your account. Please try again.");
     } finally {
@@ -42,10 +37,13 @@ export default function Register() {
         <h1>Check your email</h1>
         <p>
           {registered.emailSent
-            ? `We've sent a verification link to ${registered.email}.`
-            : "Your account was created, but we could not send the verification email just now."}
+            ? `We've sent a link to ${registered.email}.`
+            : "We could not send the email just now. Use Forgot password on the login page to get a new link."}
         </p>
-        <p className="muted">Verify your IIT (ISM) email address to activate your account and log in.</p>
+        <p className="muted">
+          Open the link in that email to activate your account. If you already sign in with Google, the
+          same link lets you choose a password for it.
+        </p>
         <Link className="button primary" to="/login">
           Go to login
         </Link>

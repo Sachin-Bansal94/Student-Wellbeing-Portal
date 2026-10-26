@@ -1,12 +1,15 @@
 import { Router } from "express";
 import { z } from "zod";
 import { asyncHandler } from "../lib/asyncHandler";
+import { validateUuidParams } from "../lib/params";
 import { badRequest } from "../lib/errors";
 import { getAvailability, listCounsellors } from "../services/availability";
 import { requireAuth } from "../middleware/auth";
 import { todayIstISO } from "../lib/ist";
 
 const router = Router();
+
+validateUuidParams(router, "id");
 
 router.get(
   "/",

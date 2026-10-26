@@ -7,9 +7,23 @@ const schema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   PORT: z.coerce.number().int().positive().default(4000),
   DATABASE_URL: z.string().min(1),
-  CLIENT_ORIGIN: z.string().url().default("http://localhost:5173"),
+  CLIENT_ORIGIN: z
+    .string()
+    .url()
+    .default("http://localhost:5173")
+    .transform((value) => value.replace(/\/+$/, "")),
   GOOGLE_CLIENT_ID: z.string().optional().default(""),
   ALLOWED_EMAIL_DOMAIN: z.string().min(1).default("iitism.ac.in"),
+  ADMIN_EMAILS: z
+    .string()
+    .optional()
+    .default("")
+    .transform((value) =>
+      value
+        .split(",")
+        .map((entry) => entry.trim().toLowerCase())
+        .filter(Boolean)
+    ),
   ALLOW_DEV_LOGIN: z
     .string()
     .optional()
@@ -20,6 +34,15 @@ const schema = z.object({
   AUTH_TOKEN_SECRET: z.string().min(16),
   RESEND_API_KEY: z.string().optional().default(""),
   MAIL_FROM: z.string().default("IIT ISM Wellbeing <wellbeing@example.com>"),
+  SMTP_HOST: z.string().optional().default(""),
+  SMTP_PORT: z.coerce.number().int().positive().default(587),
+  SMTP_SECURE: z
+    .string()
+    .optional()
+    .default("false")
+    .transform((value) => value === "true"),
+  SMTP_USER: z.string().optional().default(""),
+  SMTP_PASS: z.string().optional().default(""),
   SLOT_MINUTES: z.coerce.number().int().min(5).max(20).default(20),
   MIN_BOOKING_LEAD_MINUTES: z.coerce.number().int().min(0).default(60),
   PENDING_EXPIRY_MINUTES: z.coerce.number().int().min(5).default(10),

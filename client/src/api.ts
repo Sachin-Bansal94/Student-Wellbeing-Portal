@@ -1,14 +1,32 @@
 import type {
+  AdminAppointment,
+  AdminCounsellor,
+  AdminStats,
   Appointment,
+  AppointmentScope,
+  AvailabilityException,
+  AvailabilityRule,
   BookResult,
   ConfirmResult,
   Counsellor,
+  CounsellorInput,
+  CounsellorSelf,
   DayAvailability,
+  Profile,
+  ProfilePatch,
   PublicConfig,
   RegisterResult,
   ResendResult,
   User,
 } from "./types";
+
+export type ExceptionInput = {
+  date: string;
+  kind: "blocked" | "extra";
+  startTime?: string | null;
+  endTime?: string | null;
+  reason?: string | null;
+};
 
 const BASE = import.meta.env.VITE_API_BASE ?? "";
 
@@ -131,5 +149,96 @@ export const api = {
       method: "POST",
     }),
 
-  myAppointments: () => request<{ appointments: Appointment[] }>("/appointments/mine"),
+  myAppointments: (scope: AppointmentScope = "all") =>
+    request<{ appointments: Appointment[] }>(`/appointments/mine?scope=${scope}`),
+
+  profile: () => request<{ profile: Profile }>("/me/profile"),
+
+  updateProfile: (patch: ProfilePatch) =>
+    request<{ profile: Profile }>("/me/profile", {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+
+  counsellorSelf: {
+    me: () => request<{ counsellor: CounsellorSelf }>("/me/counsellor"),
+
+    rules: () => request<{ rules: AvailabilityRule[] }>("/me/counsellor/availability-rules"),
+
+    addRule: (weekday: number, startTime: string, endTime: string) =>
+      request<{ rule: AvailabilityRule }>("/me/counsellor/availability-rules", {
+        method: "POST",
+        body: JSON.stringify({ weekday, startTime, endTime }),
+      }),
+
+    removeRule: (ruleId: string) =>
+      request<{ ok: boolean }>(`/me/counsellor/availability-rules/${ruleId}`, { method: "DELETE" }),
+
+    exceptions: () => request<{ exceptions: AvailabilityException[] }>("/me/counsellor/exceptions"),
+
+    addException: (input: ExceptionInput) =>
+      request<{ exception: AvailabilityException }>("/me/counsellor/exceptions", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+
+    removeException: (exceptionId: string) =>
+      request<{ ok: boolean }>(`/me/counsellor/exceptions/${exceptionId}`, { method: "DELETE" }),
+  },
+
+  admin: {
+    stats: () => request<{ stats: AdminStats }>("/admin/stats"),
+
+    appointments: (filter: { scope: AppointmentScope; status?: Appointment["status"]; counsellorId?: string }) => {
+      const params = new URLSearchParams({ scope: filter.scope });
+      if (filter.status) params.set("status", filter.status);
+      if (filter.counsellorId) params.set("counsellorId", filter.counsellorId);
+      return request<{ appointments: AdminAppointment[] }>(`/admin/appointments?${params}`);
+    },
+
+    cancelAppointment: (id: string) =>
+      request<{ appointmentId: string }>(`/admin/appointments/${id}/cancel`, { method: "POST" }),
+
+    counsellors: () => request<{ counsellors: AdminCounsellor[] }>("/admin/counsellors"),
+
+    createCounsellor: (input: CounsellorInput) =>
+      request<{ counsellor: AdminCounsellor; linkedExistingUser: boolean }>("/admin/counsellors", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+
+    updateCounsellor: (id: string, patch: Partial<CounsellorInput> & { isActive?: boolean }) =>
+      request<{ counsellor: AdminCounsellor }>(`/admin/counsellors/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      }),
+
+    rules: (id: string) =>
+      request<{ rules: AvailabilityRule[] }>(`/admin/counsellors/${id}/availability-rules`),
+
+    addRule: (id: string, weekday: number, startTime: string, endTime: string) =>
+      request<{ rule: AvailabilityRule }>(`/admin/counsellors/${id}/availability-rules`, {
+        method: "POST",
+        body: JSON.stringify({ weekday, startTime, endTime }),
+      }),
+
+    removeRule: (id: string, ruleId: string) =>
+      request<{ ok: boolean }>(`/admin/counsellors/${id}/availability-rules/${ruleId}`, {
+        method: "DELETE",
+      }),
+
+    exceptions: (id: string) =>
+      request<{ exceptions: AvailabilityException[] }>(`/admin/counsellors/${id}/exceptions`),
+
+    addException: (id: string, input: ExceptionInput) =>
+      request<{ exception: AvailabilityException }>(`/admin/counsellors/${id}/exceptions`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+
+    removeException: (id: string, exceptionId: string) =>
+      request<{ ok: boolean }>(`/admin/counsellors/${id}/exceptions/${exceptionId}`, {
+        method: "DELETE",
+      }),
+  },
 };

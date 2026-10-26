@@ -8,7 +8,9 @@
     "start": "node dist/index.js",
     "migrate": "tsx src/db/migrate.ts",
     "seed": "tsx src/db/seed.ts",
-    "verify": "cross-env RESEND_API_KEY= tsx scripts/verify.ts"
+    "migrate:test": "tsx scripts/migrateTest.ts",
+    "seed:test": "tsx scripts/seedTest.ts",
+    "verify": "cross-env ADMIN_EMAILS=verifyadmin@iitism.ac.in tsx scripts/verify.ts && cross-env ADMIN_EMAILS=verifyadmin@iitism.ac.in tsx scripts/verifyHardening.ts"
   },
   "dependencies": {
     "@types/cookie-parser": "^1.4.8",
@@ -16,6 +18,7 @@
     "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.7",
     "@types/node": "^22.10.5",
+    "@types/nodemailer": "^6.4.24",
     "@types/pg": "^8.11.10",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
@@ -25,12 +28,17 @@
     "google-auth-library": "^9.15.0",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^6.10.1",
     "pg": "^8.13.1",
     "resend": "^4.0.1",
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@types/mailparser": "^3.9.0",
+    "@types/smtp-server": "^3.5.13",
     "cross-env": "^7.0.3",
+    "mailparser": "^3.12.4",
+    "smtp-server": "^3.21.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }
