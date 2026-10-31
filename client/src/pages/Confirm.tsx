@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { BookingConfirmed, LinkExpired } from "../assets/illustrations";
+import { StatusPanel } from "../components/StatusPanel";
 import { api, ApiError } from "../api";
 import { formatDate, formatTime } from "../lib/format";
 import type { ConfirmResult } from "../types";
@@ -39,11 +41,7 @@ export default function Confirm() {
 
   if (state === "done" && result) {
     return (
-      <div className="card confirm-panel">
-        <div className="big-check" aria-hidden="true">
-          &#10003;
-        </div>
-        <h1>Appointment confirmed</h1>
+      <StatusPanel illustration={<BookingConfirmed />} title="Appointment confirmed">
         <p>
           Your counselling appointment has been confirmed. We have emailed you the details and a
           calendar invite, and we will remind you 24 hours and 1 hour before.
@@ -54,59 +52,55 @@ export default function Confirm() {
           </p>
           <p>{formatDate(result.startsAt)}</p>
           <p>
-            {formatTime(result.startsAt)} - {formatTime(result.endsAt)}
+            {formatTime(result.startsAt)} to {formatTime(result.endsAt)}
           </p>
         </div>
-        <Link className="button primary" to="/appointments">
-          View my appointments
-        </Link>
-      </div>
+        <div className="row">
+          <Link className="button primary" to="/appointments">
+            View my appointments
+          </Link>
+        </div>
+      </StatusPanel>
     );
   }
 
   if (state === "expired") {
     return (
-      <div className="card confirm-panel">
-        <div className="big-check failed" aria-hidden="true">
-          !
-        </div>
-        <h1>Confirmation link expired</h1>
+      <StatusPanel illustration={<LinkExpired />} title="Confirmation link expired">
         <p>
           This appointment was not confirmed in time, and the slot has been released back to
           other students.
         </p>
-        <Link className="button primary" to="/">
-          Book another appointment
-        </Link>
-      </div>
+        <div className="row">
+          <Link className="button primary" to="/">
+            Book another appointment
+          </Link>
+        </div>
+      </StatusPanel>
     );
   }
 
   if (state === "already") {
     return (
-      <div className="card confirm-panel">
-        <div className="big-check" aria-hidden="true">
-          &#10003;
-        </div>
-        <h1>Already confirmed</h1>
+      <StatusPanel illustration={<BookingConfirmed />} title="Already confirmed">
         <p>This appointment has already been confirmed.</p>
-        <Link className="button primary" to="/appointments">
-          View my appointments
-        </Link>
-      </div>
+        <div className="row">
+          <Link className="button primary" to="/appointments">
+            View my appointments
+          </Link>
+        </div>
+      </StatusPanel>
     );
   }
 
   return (
-    <div className="card confirm-panel">
-      <div className="big-check failed" aria-hidden="true">
-        !
-      </div>
-      <h1>Could not confirm</h1>
+    <StatusPanel illustration={<LinkExpired />} title="Could not confirm">
       <p>This confirmation link is invalid or no longer available.</p>
-      <Link className="button primary" to="/appointments">
-        View my appointments
-      </Link>
-    </div>
+      <div className="row">
+        <Link className="button primary" to="/appointments">
+          View my appointments
+        </Link>
+      </div>
+    </StatusPanel>
   );
 }
