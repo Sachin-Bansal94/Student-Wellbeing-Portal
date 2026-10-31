@@ -87,7 +87,7 @@ export default function Profile() {
   if (error || !profile || !draft) return <div className="alert error">{error ?? "Profile unavailable."}</div>;
 
   return (
-    <>
+    <div className="profile-page">
       <div className="page-head">
         <h1>Your profile</h1>
         <p className="muted">
@@ -98,7 +98,7 @@ export default function Profile() {
 
       <div className="card profile-section">
         <h2>Account</h2>
-        <p className="muted small">Managed by your institute sign-in and cannot be changed here.</p>
+        <p className="muted small">Managed by your institute sign in and cannot be changed here.</p>
         <dl className="review-details">
           <div>
             <dt>Email</dt>
@@ -189,6 +189,6 @@ export default function Profile() {
           )}
         </div>
       </form>
-    </>
+    </div>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "../api";
 import { AvailabilityEditor } from "../components/AvailabilityEditor";
 import type { AvailabilityApi } from "../components/AvailabilityEditor";
+import { NoAppointments } from "../assets/illustrations";
 import { EmptyState, SkeletonCard, SkeletonList, StatusBadge } from "../components/Feedback";
 import { formatDate, formatTime } from "../lib/format";
 import type { Appointment, CounsellorSelf } from "../types";
@@ -74,7 +75,7 @@ export default function CounsellorDashboard() {
         <h1>{counsellor.fullName}</h1>
         <p className="muted">
           {counsellor.title}
-          {counsellor.room ? ` · ${counsellor.room}` : ""} · {counsellor.slotMinutes}-minute sessions
+          {counsellor.room ? ` · ${counsellor.room}` : ""} · {counsellor.slotMinutes} minute sessions
         </p>
       </div>
 
@@ -117,6 +118,7 @@ export default function CounsellorDashboard() {
       {tab === "schedule" ? (
         grouped.size === 0 ? (
           <EmptyState
+            illustration={<NoAppointments />}
             title="No upcoming sessions"
             body="When students book with you, their sessions appear here grouped by day."
           />
@@ -130,7 +132,7 @@ export default function CounsellorDashboard() {
                     <div className="appointment-main">
                       <StatusBadge status={appointment.status} />
                       <h3 className="appointment-time">
-                        {formatTime(appointment.starts_at)} – {formatTime(appointment.ends_at)}
+                        {formatTime(appointment.starts_at)} to {formatTime(appointment.ends_at)}
                       </h3>
                       <p className="muted">{appointment.student_name ?? "Student"}</p>
                       {appointment.student_email && (

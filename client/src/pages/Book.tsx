@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, ApiError } from "../api";
 import { useAuth } from "../AuthContext";
+import { NoSlots, VerifyEmail } from "../assets/illustrations";
+import { EmptyState, Skeleton } from "../components/Feedback";
+import { StatusPanel } from "../components/StatusPanel";
 import { addDays, formatDate, formatDayShort, formatTime, isMorning, todayISO } from "../lib/format";
 import type { Counsellor, DayAvailability, Slot } from "../types";
 
@@ -92,7 +95,7 @@ export default function Book() {
       setResendNotice(
         result.emailSent
           ? "Confirmation email sent again."
-          : "We could not send the email just now — please try again in a moment."
+          : "We could not send the email just now. Please try again in a moment."
       );
     } catch (err) {
       setResendNotice(err instanceof ApiError ? err.message : "Could not resend the email. Please try again.");
@@ -103,11 +106,7 @@ export default function Book() {
 
   if (requested) {
     return (
-      <div className="card confirm-panel">
-        <div className="big-check" aria-hidden="true">
-          &#10003;
-        </div>
-        <h1>Appointment request created</h1>
+      <StatusPanel illustration={<VerifyEmail />} title="Appointment request created">
         <p>
           {requested.emailSent
             ? `We've sent a confirmation link to your ${config?.allowedDomain ? `@${config.allowedDomain}` : "IIT (ISM)"} email.`
@@ -126,7 +125,7 @@ export default function Book() {
             View my appointments
           </Link>
         </div>
-      </div>
+      </StatusPanel>
     );
   }
 
@@ -134,7 +133,7 @@ export default function Book() {
     <>
       <div className="page-head">
         <Link to="/" className="back-link">
-          &larr; All counsellors
+          All counsellors
         </Link>
         <h1>{counsellor?.fullName ?? "Availability"}</h1>
         <p className="muted">
@@ -149,9 +148,9 @@ export default function Book() {
           onClick={() => setWeekStart(addDays(weekStart, -7))}
           disabled={!canGoBack}
         >
-          &larr; Previous
+          Previous
         </button>
-        <span className="muted small">
+        <span className="week-label">
           {days.length > 0 && `${formatDate(`${days[0].date}T06:00:00Z`)} onwards`}
         </span>
         <button
@@ -159,12 +158,19 @@ export default function Book() {
           onClick={() => setWeekStart(addDays(weekStart, 7))}
           disabled={!canGoForward}
         >
-          Next &rarr;
+          Next
         </button>
       </div>
 
       {loading ? (
-        <div className="loading">Loading slots...</div>
+        <div aria-busy="true" aria-label="Loading slots">
+          <div className="day-strip-skeleton">
+            {Array.from({ length: 7 }).map((_, index) => (
+              <Skeleton key={index} height="82px" />
+            ))}
+          </div>
+          <Skeleton height="44px" width="60%" />
+        </div>
       ) : (
         <>
           <div className="day-strip">
@@ -177,6 +183,7 @@ export default function Book() {
                   className={`day-chip${day.date === selectedDate ? " active" : ""}${
                     open === 0 ? " empty" : ""
                   }`}
+                  aria-pressed={day.date === selectedDate}
                   onClick={() => {
                     setSelectedDate(day.date);
                     setSelectedSlot(null);
@@ -197,14 +204,27 @@ export default function Book() {
               appointment slot. Pick another time below.
             </div>
           )}
-          {error && <div className="alert error">{error}</div>}
+          {error && (
+            <div className="alert error" role="alert">
+              {error}
+            </div>
+          )}
 
-          {activeDay && (
-            <div className={`slots-area${selectedSlot ? " with-selection" : ""}`}>
-              {activeDay.slots.length === 0 ? (
-                <p className="muted">No slots on this day.</p>
-              ) : (
+          <div className="book-layout">
+            <div className="slots-area">
+              {activeDay && activeDay.slots.length > 0 && (
                 <>
+                  <div className="slot-legend" aria-hidden="true">
+                    <span>
+                      <i /> Available
+                    </span>
+                    <span>
+                      <i className="is-selected" /> Selected
+                    </span>
+                    <span>
+                      <i className="is-taken" /> Taken
+                    </span>
+                  </div>
                   <SlotGroup
                     label="Morning"
                     slots={morning}
@@ -219,54 +239,79 @@ export default function Book() {
                   />
                 </>
               )}
+              {activeDay && activeDay.slots.length === 0 && (
+                <EmptyState
+                  illustration={<NoSlots />}
+                  title="No slots on this day."
+                  body="Try another day, or use Next to look at the following week."
+                />
+              )}
             </div>
-          )}
+
+            <div id="review" className={`card booking-bar${selectedSlot ? "" : " is-empty"}`}>
+              <h2>Review your appointment</h2>
+              {selectedSlot ? (
+                <>
+                  <dl className="review-details">
+                    <div>
+                      <dt>Counsellor</dt>
+                      <dd>{counsellor?.fullName}</dd>
+                    </div>
+                    <div>
+                      <dt>Date</dt>
+                      <dd>{formatDate(selectedSlot.startsAt)}</dd>
+                    </div>
+                    <div>
+                      <dt>Time</dt>
+                      <dd>
+                        {formatTime(selectedSlot.startsAt)} to {formatTime(selectedSlot.endsAt)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Duration</dt>
+                      <dd>{counsellor?.slotMinutes ?? 20} minutes</dd>
+                    </div>
+                    {user?.email && (
+                      <div>
+                        <dt>Booking as</dt>
+                        <dd>{user.email}</dd>
+                      </div>
+                    )}
+                  </dl>
+                  <div className="field">
+                    <label htmlFor="booking-note">Note for your counsellor (optional)</label>
+                    <textarea
+                      id="booking-note"
+                      placeholder="Anything you want the counsellor to know beforehand?"
+                      value={note}
+                      maxLength={500}
+                      onChange={(event) => setNote(event.target.value)}
+                    />
+                    <span className="field-hint">Only this counsellor can read it.</span>
+                  </div>
+                  <div className="row">
+                    <button className="button primary" onClick={() => void handleRequest()} disabled={booking}>
+                      {booking ? "Requesting..." : "Request appointment"}
+                    </button>
+                    <button className="button ghost" onClick={() => setSelectedSlot(null)}>
+                      Clear
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <p className="booking-empty">Pick a time and its details will appear here.</p>
+              )}
+            </div>
+          </div>
 
           {selectedSlot && (
-            <div className="card booking-bar">
-              <div>
-                <div className="small muted">Review your appointment</div>
-                <dl className="review-details">
-                  <div>
-                    <dt>Counsellor</dt>
-                    <dd>{counsellor?.fullName}</dd>
-                  </div>
-                  <div>
-                    <dt>Date</dt>
-                    <dd>{formatDate(selectedSlot.startsAt)}</dd>
-                  </div>
-                  <div>
-                    <dt>Time</dt>
-                    <dd>
-                      {formatTime(selectedSlot.startsAt)} - {formatTime(selectedSlot.endsAt)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Duration</dt>
-                    <dd>{counsellor?.slotMinutes ?? 20} minutes</dd>
-                  </div>
-                  {user?.email && (
-                    <div>
-                      <dt>Booking as</dt>
-                      <dd>{user.email}</dd>
-                    </div>
-                  )}
-                </dl>
-              </div>
-              <textarea
-                placeholder="Anything you want the counsellor to know beforehand? (optional)"
-                value={note}
-                maxLength={500}
-                onChange={(event) => setNote(event.target.value)}
-              />
-              <div className="row">
-                <button className="button primary" onClick={() => void handleRequest()} disabled={booking}>
-                  {booking ? "Requesting..." : "Request appointment"}
-                </button>
-                <button className="button ghost" onClick={() => setSelectedSlot(null)}>
-                  Clear
-                </button>
-              </div>
+            <div className="booking-pin">
+              <span>
+                {formatDayShort(selectedDate ?? "").weekday}, {formatTime(selectedSlot.startsAt)}
+              </span>
+              <a className="button primary small" href="#review">
+                Review
+              </a>
             </div>
           )}
         </>
@@ -290,18 +335,23 @@ function SlotGroup({
 
   return (
     <section className="slot-group">
-      <h3>{label}</h3>
+      <h2>{label}</h2>
       <div className="slot-grid">
-        {slots.map((slot) => (
-          <button
-            key={slot.startsAt}
-            className={`slot${selected?.startsAt === slot.startsAt ? " selected" : ""}`}
-            disabled={!slot.available}
-            onClick={() => onSelect(slot)}
-          >
-            {formatTime(slot.startsAt)}
-          </button>
-        ))}
+        {slots.map((slot) => {
+          const isSelected = selected?.startsAt === slot.startsAt;
+          return (
+            <button
+              key={slot.startsAt}
+              className={`slot${isSelected ? " selected" : ""}`}
+              disabled={!slot.available}
+              aria-pressed={isSelected}
+              onClick={() => onSelect(slot)}
+            >
+              <span className="slot-time">{formatTime(slot.startsAt)}</span>
+              {!slot.available && <span className="slot-note">Taken</span>}
+            </button>
+          );
+        })}
       </div>
     </section>
   );
