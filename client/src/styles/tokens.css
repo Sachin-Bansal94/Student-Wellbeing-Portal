@@ -1,0 +1,113 @@
+/* Local fonts scaled to match the web fonts, measured in the browser, so the swap moves nothing. */
+@font-face {
+  font-family: "Source Serif Fallback";
+  font-weight: 600;
+  src: local("Georgia Bold"), local("Georgia-Bold");
+  size-adjust: 92.5%;
+  ascent-override: 112.4%;
+  descent-override: 36.8%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: "Source Sans Fallback";
+  src: local("Arial");
+  size-adjust: 92.05%;
+  ascent-override: 110.8%;
+  descent-override: 43.5%;
+  line-gap-override: 0%;
+}
+
+:root {
+  color-scheme: light;
+
+  /* Palette */
+  --maroon: #5d0207;
+  --teal: #1f5c5e;
+  --marigold: #f2a93b;
+  --ink: #231a1b;
+  --slate: #5a5052;
+  --mist: #f3f5f4;
+  --white: #ffffff;
+
+  /* States */
+  --brick: #8a1c22;
+  --brick-soft: #f6eceb;
+  --teal-soft: #e4efee;
+  --green: #1b6b45;
+  --green-soft: #e6f2eb;
+  --amber-text: #7a4f00;
+  --amber-soft: #fbf1dd;
+  --taken: #6a6163;
+  --taken-soft: #ece9e7;
+  --line: #d8d2cf;
+  --field-line: #857b7d;
+
+  /* Illustration only */
+  --marigold-soft: #fbe6c4;
+  --marigold-mid: #f7d39a;
+  --teal-mid: #4f8a8b;
+  --maroon-deep: #470105;
+  --skin-a: #8d5a3b;
+  --skin-b: #a9714b;
+  --skin-c: #6f4630;
+  --hair: #241817;
+
+  /* Type */
+  --font-heading: "Source Serif 4 Variable", "Source Serif Fallback", Georgia, serif;
+  --font-body: "Source Sans 3 Variable", "Source Sans Fallback", Arial, sans-serif;
+  --text-sm: 14px;
+  --text-dense: 15px;
+  --text-base: 17px;
+  --text-lg: 20px;
+  --text-xl: 24px;
+  --text-2xl: 30px;
+  --text-3xl: 38px;
+  --text-hero: clamp(40px, 4.3vw, 58px);
+  --measure: 62ch;
+
+  /* Spacing */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+  --s-7: 48px;
+  --s-8: 72px;
+  --s-9: 112px;
+
+  /* Radius */
+  --radius-control: 6px;
+  --radius-card: 10px;
+  --radius-round: 999px;
+
+  /* Shadow */
+  --shadow-1: 0 1px 2px rgba(35, 26, 27, 0.08), 0 8px 24px rgba(35, 26, 27, 0.08);
+  --shadow-2: 0 2px 6px rgba(35, 26, 27, 0.12), 0 20px 48px rgba(35, 26, 27, 0.18);
+
+  /* Focus */
+  --focus-color: var(--teal);
+  --focus-ring: 3px solid var(--focus-color);
+
+  /* Layout */
+  --shell: 1120px;
+  --gutter: 24px;
+  --tap: 44px;
+  --header-height: 73px;
+  --chrome-height: 110px;
+}
+
+@media (max-width: 640px) {
+  :root {
+    --chrome-height: 118px;
+  }
+}
+
+@media (max-width: 480px) {
+  :root {
+    --gutter: 20px;
+    --text-3xl: 32px;
+    --text-2xl: 26px;
+  }
+}
