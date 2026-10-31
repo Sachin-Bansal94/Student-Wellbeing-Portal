@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "../api";
+import { NoAppointments } from "../assets/illustrations";
 import { ConfirmDialog } from "../components/Modal";
 import { EmptyState, SkeletonList, StatusBadge } from "../components/Feedback";
 import { useToast } from "../components/Toast";
@@ -115,43 +116,68 @@ export default function AdminAppointments() {
         </div>
       </div>
 
-      {error && <div className="alert error">{error}</div>}
+      {error && (
+        <div className="alert error" role="alert">
+          {error}
+        </div>
+      )}
 
       {appointments === null ? (
         <SkeletonList count={3} />
       ) : appointments.length === 0 ? (
-        <EmptyState title="No appointments match" body="Try a different time range or filter." />
+        <EmptyState
+          illustration={<NoAppointments />}
+          title="No appointments match"
+          body="Try a different time range or filter."
+        />
       ) : (
-        <div className="appointment-list">
-          {appointments.map((appointment) => {
-            const active = ["pending", "confirmed"].includes(appointment.status);
-            return (
-              <article key={appointment.id} className="card appointment">
-                <div className="appointment-main">
-                  <StatusBadge status={appointment.status} />
-                  <h2>{formatDate(appointment.starts_at)}</h2>
-                  <p className="time">
-                    {formatTime(appointment.starts_at)} - {formatTime(appointment.ends_at)}
-                  </p>
-                  <p className="muted">
-                    {appointment.student_name} ({appointment.student_email})
-                  </p>
-                  <p className="muted small">
-                    with {appointment.counsellor_name}
-                    {appointment.room ? ` · ${appointment.room}` : ""}
-                  </p>
-                </div>
-
-                {active && (
-                  <div className="appointment-actions">
-                    <button className="button ghost small" onClick={() => setPendingCancel(appointment)}>
-                      Cancel
-                    </button>
-                  </div>
-                )}
-              </article>
-            );
-          })}
+        <div className="card table-card" tabIndex={0} role="region" aria-label="Appointments table">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th scope="col">Date and time</th>
+                <th scope="col">Student</th>
+                <th scope="col">Counsellor</th>
+                <th scope="col">Status</th>
+                <th scope="col">
+                  <span className="visually-hidden">Actions</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {appointments.map((appointment) => {
+                const active = ["pending", "confirmed"].includes(appointment.status);
+                return (
+                  <tr key={appointment.id} className="appointment">
+                    <td className="nowrap">
+                      {formatDate(appointment.starts_at)}
+                      <span className="cell-secondary">
+                        {formatTime(appointment.starts_at)} to {formatTime(appointment.ends_at)}
+                      </span>
+                    </td>
+                    <td className="nowrap">
+                      {appointment.student_name}
+                      <span className="cell-secondary">{appointment.student_email}</span>
+                    </td>
+                    <td className="nowrap">
+                      {appointment.counsellor_name}
+                      {appointment.room && <span className="cell-secondary">{appointment.room}</span>}
+                    </td>
+                    <td>
+                      <StatusBadge status={appointment.status} />
+                    </td>
+                    <td className="numeric">
+                      {active && (
+                        <button className="button ghost small" onClick={() => setPendingCancel(appointment)}>
+                          Cancel
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
