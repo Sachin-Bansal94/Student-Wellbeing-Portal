@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { Appointment } from "../types";
 
-/** Shimmer placeholder shaped like the content it stands in for. */
+/** Static placeholder shaped like the content it stands in for. */
 export function Skeleton({ className = "", width, height }: { className?: string; width?: string; height?: string }) {
   return <span className={`skeleton ${className}`} style={{ width, height }} aria-hidden="true" />;
 }
@@ -31,16 +31,23 @@ export function EmptyState({
   title,
   body,
   action,
+  illustration,
+  heading: Heading = "h2",
 }: {
   title: string;
   body?: string;
   action?: ReactNode;
+  illustration?: ReactNode;
+  heading?: "h2" | "h3";
 }) {
   return (
     <div className="card empty-state-panel">
-      <h3>{title}</h3>
-      {body && <p className="muted">{body}</p>}
-      {action}
+      {illustration}
+      <div className="empty-state-body">
+        <Heading>{title}</Heading>
+        {body && <p className="muted">{body}</p>}
+        {action}
+      </div>
     </div>
   );
 }

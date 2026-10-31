@@ -119,8 +119,15 @@ confirmation link rules, the cancellation window, all password flows, Google acc
 role rules, privacy, rate limits, email escaping, and the admin tools. Run it after any change to
 booking or sign in.
 
-The browser walkthrough in `e2e/` drives the real screens for a student, a counsellor and an
-admin (37 checks). See `e2e/README.md`.
+The browser walkthrough in `e2e/` drives the real screens for a visitor, a student, a counsellor
+and an admin (45 checks). See `e2e/README.md`. It must only ever run on the test database.
+
+### Logo, campus photo and institute details
+
+Add the official logo at `client/public/brand/logo.svg` and a campus photo at
+`client/public/images/campus.jpg` (16 by 9, under 150 KB). If a file is missing, the site shows a
+built in mark or an illustration instead. Names, phone numbers, helplines and their sources all
+live in `client/src/siteConfig.ts`. A value left empty there shows nothing on screen.
 
 ### Environment
 
