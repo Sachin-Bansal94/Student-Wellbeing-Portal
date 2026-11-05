@@ -1,0 +1,178 @@
+.admin-shell {
+  display: grid;
+  grid-template-columns: 208px minmax(0, 1fr);
+  gap: var(--s-6);
+  align-items: start;
+}
+
+.admin-nav {
+  position: sticky;
+  top: calc(var(--header-height) + var(--s-5));
+  display: grid;
+  gap: var(--s-2);
+  padding-right: var(--s-4);
+  border-right: 1px solid var(--line);
+}
+
+.admin-nav-label {
+  padding-inline: var(--s-3);
+  color: var(--slate);
+  font-size: var(--text-sm);
+}
+
+.admin-nav nav {
+  display: grid;
+  gap: 2px;
+}
+
+.admin-nav a {
+  display: flex;
+  align-items: center;
+  min-height: var(--tap);
+  padding-inline: var(--s-3);
+  border-radius: var(--radius-control);
+  color: var(--ink);
+  font-size: var(--text-dense);
+  text-decoration: none;
+}
+
+.admin-nav a:hover {
+  background: var(--white);
+}
+
+.admin-nav a.active,
+.admin-nav a.active:hover {
+  background: var(--teal-soft);
+  color: var(--teal);
+  font-weight: 600;
+}
+
+.admin-content {
+  min-width: 0;
+}
+
+.admin-content .page-head {
+  margin-bottom: var(--s-5);
+}
+
+.admin-content h1 {
+  font-size: var(--text-2xl);
+}
+
+.admin-page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--s-4);
+}
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--s-3) var(--s-4);
+  margin-bottom: var(--s-4);
+}
+
+.filter-bar .field,
+.filter-bar .segmented {
+  margin-bottom: 0;
+}
+
+.inline-field {
+  min-width: 200px;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.cell-secondary {
+  display: block;
+  color: var(--slate);
+  font-size: var(--text-sm);
+}
+
+.counsellor-admin-list {
+  list-style: none;
+  display: grid;
+  gap: var(--s-2);
+  margin: 0;
+  padding: 0;
+}
+
+.counsellor-admin-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--s-3) var(--s-4);
+  padding: var(--s-4);
+}
+
+.counsellor-admin-row.is-inactive {
+  background: var(--mist);
+}
+
+.counsellor-admin-main {
+  min-width: 0;
+}
+
+.counsellor-admin-main p {
+  overflow-wrap: anywhere;
+}
+
+.counsellor-admin-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin-bottom: var(--s-1);
+}
+
+.counsellor-admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+@media (max-width: 880px) {
+  .admin-shell {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-5);
+  }
+
+  .admin-nav {
+    position: static;
+    padding-right: 0;
+    padding-bottom: var(--s-2);
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .admin-nav-label {
+    padding-inline: 0;
+  }
+
+  .admin-nav nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-1);
+  }
+
+  .counsellor-admin-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .counsellor-admin-actions .button {
+    flex: 1 1 auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .inline-field {
+    flex: 1 1 100%;
+  }
+}

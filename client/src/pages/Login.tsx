@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../AuthContext";
+import { AuthAside } from "../components/AuthAside";
 import { GoogleSignInButton } from "../components/GoogleSignInButton";
 import { api, ApiError } from "../api";
 
@@ -64,21 +65,15 @@ export default function Login() {
   }
 
   return (
-    <div className="login">
-      <div className="login-copy">
-        <h1>Talk to someone. It is free, and it stays private.</h1>
-        <p>
-          Book a 20-minute session with one of the on-campus counsellors at the Health Center.
-          No fees, no forms, no one else finds out.
-        </p>
-        <ul className="login-points">
-          <li>See exactly when each counsellor is free this week</li>
-          <li>Pick a slot and confirm it from your email</li>
-          <li>Get a reminder a day before and an hour before</li>
-        </ul>
+    <div className="auth-page">
+      <div className="auth-copy">
+        <h1>Talk to a counsellor. It is free and confidential.</h1>
+        <p>Sign in to book a session with one of the counsellors at the Health Center.</p>
       </div>
 
-      <div className="card login-card">
+      <AuthAside />
+
+      <div className="card auth-card">
         <h2>Sign in to book</h2>
         <p className="muted">
           Use your IIT (ISM) email{config?.allowedDomain ? ` (@${config.allowedDomain})` : ""}.
@@ -92,7 +87,7 @@ export default function Login() {
           }}
         >
           <div className="field">
-            <label htmlFor="login-email">IIT ISM Email</label>
+            <label htmlFor="login-email">IIT ISM email</label>
             <input
               id="login-email"
               type="email"
@@ -126,15 +121,19 @@ export default function Login() {
             </div>
           </div>
 
-          <button className="button primary" type="submit" disabled={submitting} style={{ width: "100%" }}>
+          <button className="button primary block" type="submit" disabled={submitting}>
             {submitting ? "Signing in..." : "Login"}
           </button>
         </form>
 
-        {error && <div className="alert error">{error}</div>}
+        {error && (
+          <div className="alert error" role="alert">
+            {error}
+          </div>
+        )}
 
         {unverifiedEmail && (
-          <div className="row" style={{ marginTop: -8, marginBottom: 16 }}>
+          <div className="row auth-resend">
             <button className="button ghost small" onClick={() => void handleResend()} disabled={resendBusy}>
               {resendBusy ? "Sending..." : "Resend verification email"}
             </button>
@@ -158,19 +157,20 @@ export default function Login() {
           <div className="dev-login">
             <div className="dev-badge">Local testing only</div>
             <p className="small muted">
-              Dev sign-in is on. Any @{config.allowedDomain} address gets a session without a
+              Dev sign in is on. Any @{config.allowedDomain} address gets a session without a
               password. Turn off <code>ALLOW_DEV_LOGIN</code> before deploying.
             </p>
             <div className="dev-row">
               <input
                 type="email"
+                aria-label="Email for dev sign in"
                 placeholder={`you@${config.allowedDomain}`}
                 value={devEmail}
                 onChange={(event) => setDevEmail(event.target.value)}
                 onKeyDown={(event) => event.key === "Enter" && void handleDevLogin()}
               />
               <button
-                className="button ghost small"
+                className="button ghost"
                 onClick={() => void handleDevLogin()}
                 disabled={devBusy || !devEmail.trim()}
               >
@@ -180,7 +180,7 @@ export default function Login() {
           </div>
         )}
 
-        <p className="small muted" style={{ marginTop: 16 }}>
+        <p className="auth-switch">
           Don&rsquo;t have an account? <Link to="/register">Create account</Link>
         </p>
       </div>

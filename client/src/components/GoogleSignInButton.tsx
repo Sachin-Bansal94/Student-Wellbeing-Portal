@@ -33,7 +33,7 @@ export function GoogleSignInButton({ onError }: { onError: (message: string) => 
         theme: "outline",
         size: "large",
         text: "continue_with",
-        shape: "pill",
+        shape: "rectangular",
         width: 280,
       });
 
@@ -63,7 +63,7 @@ export function GoogleSignInButton({ onError }: { onError: (message: string) => 
   return (
     <div className="google-button">
       <div ref={containerRef} />
-      {!ready && <div className="muted small">Loading Google sign-in...</div>}
+      {!ready && <div className="muted small">Loading Google sign in...</div>}
     </div>
   );
 }

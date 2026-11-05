@@ -5,6 +5,7 @@ const fs = require("fs");
 
 const BASE = process.env.BASE_URL || "http://127.0.0.1:5173";
 const SINK = process.env.SINK_URL || "http://127.0.0.1:2528";
+const API = process.env.API_URL || "http://127.0.0.1:4100";
 const SHOTS = process.env.SHOT_DIR || "";
 const PASSWORD = "Sup3r-secret-pass";
 const student = `e2e${Date.now()}@iitism.ac.in`;
@@ -32,6 +33,10 @@ const linkTo = (mail, path) => mail.links.find((l) => new URL(l).pathname === pa
 
 async function newPage(browser, errors) {
   const context = await browser.newContext({ viewport: { width: 1200, height: 900 } });
+  // Anything not going to the test API is blocked, so a stray dev server can never receive a write.
+  await context.route(/\/api\//, (route) =>
+    new URL(route.request().url()).origin === API ? route.continue() : route.abort()
+  );
   const page = await context.newPage();
   await page.route(/accounts\.google\.com|fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
   page.on("pageerror", (e) => errors.push("pageerror: " + e.message));
@@ -50,13 +55,32 @@ async function devLogin(page, email) {
 }
 
 (async () => {
+  const health = await fetch(`${API}/api/auth/config`).catch(() => null);
+  if (!health?.ok) throw new Error(`The test API is not running on ${API}. See e2e/README.md.`);
+
   const browser = await chromium.launch();
   const errors = [];
   await fetch(`${SINK}/clear`);
 
-  // ---------- Student: registration rules ----------
+  // ---------- Public home page ----------
   let page = await newPage(browser, errors);
-  await page.goto(`${BASE}/register`);
+  await page.goto(`${BASE}/`);
+  await page.waitForSelector(".hero h1");
+  check("Signed out, / shows the hero with one h1", (await page.locator("h1").count()) === 1);
+  const registerLink = page.locator(".hero").getByRole("link", { name: "Register with your institute email" });
+  check("Signed out, / shows the Register button", await registerLink.isVisible());
+  await page.waitForSelector("#counsellors .card h3");
+  const publicText = await page.textContent("main");
+  check("The home page lists counsellors from the public API", /Aishwarya/.test(publicText));
+  check("The helplines are in the footer of the home page", /14416/.test(await page.textContent("footer")));
+  check("The home page has its own help section", /14416/.test(await page.textContent("#help")));
+  await registerLink.click();
+  await page.waitForURL(`${BASE}/register`);
+  check("The Register button leads to /register", true);
+  check("The helplines are in the footer of other pages too", /14416/.test(await page.textContent("footer")));
+  await page.waitForSelector("#reg-email");
+
+  // ---------- Student: registration rules ----------
   await page.fill("#reg-email", "someone@gmail.com");
   await page.fill("#reg-password", PASSWORD);
   await page.fill("#reg-confirm", PASSWORD);
@@ -97,9 +121,10 @@ async function devLogin(page, email) {
   check("Student signs in with the password after verifying", true);
 
   // ---------- Student: view all counsellors, book a slot ----------
-  await page.waitForSelector("h2");
+  await page.waitForSelector(".card h2");
   const names = await page.locator(".card h2").allTextContents();
   check("Student sees all active counsellors", names.length >= 3, names.join(" | "));
+  check("Signed in, / shows the counsellor list and not the hero", (await page.locator(".hero").count()) === 0);
   await shot(page, "01-counsellors");
 
   await page.locator('.card:has(h2:has-text("Aishwarya")) a[href^="/book/"]').click();
@@ -235,7 +260,8 @@ async function devLogin(page, email) {
   await apage.fill("#counsellor-email", secondEmail);
   await apage.fill("#counsellor-room", "Room 10");
   await apage.locator("[role=dialog]").getByRole("button", { name: "Save changes" }).click();
-  await apage.waitForSelector(`li:has-text("Room 10")`);
+  // Scoped to this run's counsellor: deactivated ones from earlier runs also say Room 10.
+  await apage.waitForSelector(`li:has-text("${newName}"):has-text("Room 10")`);
   check("Admin can edit counsellor details", true);
 
   await npage.goto(`${BASE}/counsellor`);

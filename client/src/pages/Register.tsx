@@ -1,7 +1,10 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../AuthContext";
+import { VerifyEmail } from "../assets/illustrations";
+import { AuthAside } from "../components/AuthAside";
 import { GoogleSignInButton } from "../components/GoogleSignInButton";
+import { StatusPanel } from "../components/StatusPanel";
 import { ApiError } from "../api";
 
 export default function Register() {
@@ -30,11 +33,7 @@ export default function Register() {
 
   if (registered) {
     return (
-      <div className="card confirm-panel">
-        <div className="big-check" aria-hidden="true">
-          &#10003;
-        </div>
-        <h1>Check your email</h1>
+      <StatusPanel illustration={<VerifyEmail />} title="Check your email">
         <p>
           {registered.emailSent
             ? `We've sent a link to ${registered.email}.`
@@ -44,16 +43,18 @@ export default function Register() {
           Open the link in that email to activate your account. If you already sign in with Google, the
           same link lets you choose a password for it.
         </p>
-        <Link className="button primary" to="/login">
-          Go to login
-        </Link>
-      </div>
+        <div className="row">
+          <Link className="button primary" to="/login">
+            Go to login
+          </Link>
+        </div>
+      </StatusPanel>
     );
   }
 
   return (
-    <div className="login">
-      <div className="login-copy">
+    <div className="auth-page">
+      <div className="auth-copy">
         <h1>Create your account</h1>
         <p>
           Use your IIT (ISM) email address{config?.allowedDomain ? ` (@${config.allowedDomain})` : ""} to
@@ -61,8 +62,10 @@ export default function Register() {
         </p>
       </div>
 
-      <div className="card login-card">
-        <h2>Create your account</h2>
+      <AuthAside />
+
+      <div className="card auth-card">
+        <h2>Register with your institute email</h2>
 
         <form
           onSubmit={(event) => {
@@ -71,7 +74,7 @@ export default function Register() {
           }}
         >
           <div className="field">
-            <label htmlFor="reg-email">IIT ISM Email</label>
+            <label htmlFor="reg-email">IIT ISM email</label>
             <input
               id="reg-email"
               type="email"
@@ -111,7 +114,7 @@ export default function Register() {
           </div>
 
           <div className="field">
-            <label htmlFor="reg-confirm">Confirm Password</label>
+            <label htmlFor="reg-confirm">Confirm password</label>
             <input
               id="reg-confirm"
               type={showPassword ? "text" : "password"}
@@ -119,24 +122,28 @@ export default function Register() {
               minLength={8}
               value={confirmPassword}
               onChange={(event) => setConfirmPassword(event.target.value)}
+              aria-invalid={confirmPassword.length > 0 && confirmPassword !== password}
               required
             />
             {confirmPassword && confirmPassword !== password && (
-              <span className="field-hint">Passwords do not match.</span>
+              <span className="field-hint error-hint">Passwords do not match.</span>
             )}
           </div>
 
           <button
-            className="button primary"
+            className="button primary block"
             type="submit"
             disabled={submitting || (confirmPassword.length > 0 && confirmPassword !== password)}
-            style={{ width: "100%" }}
           >
-            {submitting ? "Creating account..." : "Create Account"}
+            {submitting ? "Creating account..." : "Create account"}
           </button>
         </form>
 
-        {error && <div className="alert error">{error}</div>}
+        {error && (
+          <div className="alert error" role="alert">
+            {error}
+          </div>
+        )}
 
         <div className="auth-divider">or</div>
 
@@ -146,7 +153,7 @@ export default function Register() {
           <p className="alert error">Google sign-in is not configured on this server yet.</p>
         )}
 
-        <p className="small muted" style={{ marginTop: 16 }}>
+        <p className="auth-switch">
           Already have an account? <Link to="/login">Login</Link>
         </p>
       </div>

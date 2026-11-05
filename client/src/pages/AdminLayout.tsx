@@ -7,7 +7,7 @@ import { NavLink, Outlet } from "react-router-dom";
 export default function AdminLayout() {
   return (
     <div className="admin-shell">
-      <aside className="admin-nav">
+      <aside className="admin-nav" aria-label="Administration">
         <span className="admin-nav-label">Administration</span>
         <nav aria-label="Admin sections">
           <NavLink to="/admin/overview">Overview</NavLink>

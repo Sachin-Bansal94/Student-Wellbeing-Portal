@@ -4,6 +4,7 @@ import { api, ApiError } from "../api";
 import { useAuth } from "../AuthContext";
 import { useToast } from "../components/Toast";
 import { ConfirmDialog } from "../components/Modal";
+import { NoAppointments } from "../assets/illustrations";
 import { EmptyState, SkeletonList, StatusBadge } from "../components/Feedback";
 import { formatDate, formatTime } from "../lib/format";
 import type { Appointment, AppointmentScope } from "../types";
@@ -60,7 +61,7 @@ export default function MyAppointments() {
     try {
       const result = await api.resendConfirmation(id);
       if (result.emailSent) toast.success("Confirmation email sent again.");
-      else toast.error("Could not send the email just now — try again shortly.");
+      else toast.error("Could not send the email just now. Please try again shortly.");
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Could not resend the email.");
     } finally {
@@ -110,6 +111,7 @@ export default function MyAppointments() {
         <SkeletonList count={3} />
       ) : (appointments ?? []).length === 0 ? (
         <EmptyState
+          illustration={<NoAppointments />}
           title={scope === "past" ? "No past appointments" : "Nothing booked right now"}
           body={
             scope === "past"
@@ -200,7 +202,7 @@ function AppointmentCard({
         <StatusBadge status={appointment.status} />
         <h2>{formatDate(appointment.starts_at)}</h2>
         <p className="time">
-          {formatTime(appointment.starts_at)} - {formatTime(appointment.ends_at)}
+          {formatTime(appointment.starts_at)} to {formatTime(appointment.ends_at)}
         </p>
         <p className="muted">
           {isCounsellor ? appointment.student_name : appointment.counsellor_name}

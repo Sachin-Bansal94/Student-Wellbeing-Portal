@@ -123,7 +123,7 @@ export default function AdminCounsellors() {
       <>
         <div className="page-head">
           <button type="button" className="back-link" onClick={() => setManaging(null)}>
-            &larr; All counsellors
+            All counsellors
           </button>
           <h1>{managing.fullName}</h1>
           <p className="muted">Managing availability on their behalf.</p>
@@ -205,7 +205,7 @@ export default function AdminCounsellors() {
                   <span className={`chip ${counsellor.isActive ? "confirmed" : "cancelled"}`}>
                     {counsellor.isActive ? "Active" : "Deactivated"}
                   </span>
-                  {!counsellor.linkedAccount && <span className="chip pending">Awaiting first sign-in</span>}
+                  {!counsellor.linkedAccount && <span className="chip pending">Awaiting first sign in</span>}
                 </div>
                 <p className="muted small">
                   {counsellor.title ?? "Counsellor"}
@@ -240,7 +240,7 @@ export default function AdminCounsellors() {
                 </button>
                 <button
                   type="button"
-                  className={`button small ${counsellor.isActive ? "danger" : "primary"}`}
+                  className={`button small ${counsellor.isActive ? "ghost" : "primary"}`}
                   onClick={() => setPendingToggle(counsellor)}
                 >
                   {counsellor.isActive ? "Deactivate" : "Reactivate"}
@@ -299,7 +299,7 @@ export default function AdminCounsellors() {
               />
               <span className="field-hint">
                 Used to link their account. If they already have a verified account they get access
-                immediately; otherwise the record waits for their first sign-in. Changing the email
+                immediately; otherwise the record waits for their first sign in. Changing the email
                 removes access from the previous account.
               </span>
             </div>

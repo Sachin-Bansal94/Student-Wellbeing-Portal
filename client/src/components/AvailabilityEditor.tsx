@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError } from "../api";
 import { useToast } from "./Toast";
 import { ConfirmDialog, Modal } from "./Modal";
+import { NoSlots } from "../assets/illustrations";
 import { EmptyState, Skeleton } from "./Feedback";
 import type { AvailabilityException, AvailabilityRule } from "../types";
 
@@ -104,7 +105,7 @@ export function AvailabilityEditor({ api, readOnlyNotice }: { api: AvailabilityA
     setBusy(true);
     try {
       await api.addRule(ruleDraft.weekday, ruleDraft.start, ruleDraft.end);
-      toast.success(`Added ${WEEKDAYS[ruleDraft.weekday]} ${formatTime(ruleDraft.start)}–${formatTime(ruleDraft.end)}`);
+      toast.success(`Added ${WEEKDAYS[ruleDraft.weekday]} ${formatTime(ruleDraft.start)} to ${formatTime(ruleDraft.end)}`);
       setRuleDraft(null);
       await load();
     } catch (err) {
@@ -201,10 +202,10 @@ export function AvailabilityEditor({ api, readOnlyNotice }: { api: AvailabilityA
                       <div
                         key={rule.id}
                         className="availability-block"
-                        style={{ top: `${top}%`, height: `${Math.max(height, 8)}%` }}
+                        style={{ top: `${top}%`, height: `${Math.max(height, 14)}%` }}
                       >
                         <span className="availability-block-time">
-                          {formatTime(rule.start_time)} – {formatTime(rule.end_time)}
+                          {formatTime(rule.start_time)} to {formatTime(rule.end_time)}
                         </span>
                         <button
                           type="button"
@@ -214,7 +215,7 @@ export function AvailabilityEditor({ api, readOnlyNotice }: { api: AvailabilityA
                             setPendingRemoval({
                               type: "rule",
                               id: rule.id,
-                              label: `${WEEKDAYS[weekday]}, ${formatTime(rule.start_time)} – ${formatTime(rule.end_time)}`,
+                              label: `${WEEKDAYS[weekday]}, ${formatTime(rule.start_time)} to ${formatTime(rule.end_time)}`,
                             })
                           }
                         >
@@ -240,8 +241,8 @@ export function AvailabilityEditor({ api, readOnlyNotice }: { api: AvailabilityA
 
       <div className="section-head">
         <div>
-          <h2>Leave &amp; one-off changes</h2>
-          <p className="muted small">Block a date you are away, or open extra hours for a single day.</p>
+          <h2>Leave and single day changes</h2>
+          <p className="muted small">Block a date you are away, or open extra hours for one day.</p>
         </div>
         <button type="button" className="button primary small" onClick={() => setExceptionOpen(true)}>
           Add entry
@@ -250,8 +251,10 @@ export function AvailabilityEditor({ api, readOnlyNotice }: { api: AvailabilityA
 
       {exceptions.length === 0 ? (
         <EmptyState
+          illustration={<NoSlots />}
+          heading="h3"
           title="Nothing scheduled"
-          body="Upcoming leave and one-off extra hours will appear here."
+          body="Upcoming leave and extra hours will appear here."
         />
       ) : (
         <ul className="exception-list">
@@ -264,7 +267,7 @@ export function AvailabilityEditor({ api, readOnlyNotice }: { api: AvailabilityA
                 <strong className="exception-date">{formatDate(exception.exception_date)}</strong>
                 <p className="muted small">
                   {exception.start_time && exception.end_time
-                    ? `${formatTime(exception.start_time)} – ${formatTime(exception.end_time)}`
+                    ? `${formatTime(exception.start_time)} to ${formatTime(exception.end_time)}`
                     : "Whole day"}
                   {exception.reason ? ` · ${exception.reason}` : ""}
                 </p>
@@ -541,7 +544,7 @@ function ExceptionDialog({
             maxLength={200}
             value={reason}
             onChange={(event) => setReason(event.target.value)}
-            placeholder="Conference, medical leave…"
+            placeholder="Conference, medical leave"
           />
         </div>
       </div>

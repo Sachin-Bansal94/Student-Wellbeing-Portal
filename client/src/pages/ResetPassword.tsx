@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { LinkExpired, Privacy, VerifyEmail } from "../assets/illustrations";
+import { StatusPanel } from "../components/StatusPanel";
 import { api, ApiError } from "../api";
 
 export default function ResetPassword() {
@@ -36,117 +38,108 @@ export default function ResetPassword() {
 
   if (!token) {
     return (
-      <div className="card confirm-panel">
-        <div className="big-check failed" aria-hidden="true">
-          !
-        </div>
-        <h1>Invalid link</h1>
+      <StatusPanel illustration={<LinkExpired />} title="Invalid link">
         <p>This password reset link is invalid.</p>
-        <Link className="button primary" to="/forgot-password">
-          Request a new link
-        </Link>
-      </div>
+        <div className="row">
+          <Link className="button primary" to="/forgot-password">
+            Request a new link
+          </Link>
+        </div>
+      </StatusPanel>
     );
   }
 
   if (done) {
     return (
-      <div className="card confirm-panel">
-        <div className="big-check" aria-hidden="true">
-          &#10003;
-        </div>
-        <h1>Password reset successfully</h1>
+      <StatusPanel illustration={<VerifyEmail done />} title="Password reset successfully">
         <p>You can now log in with your new password.</p>
-        <Link className="button primary" to="/login">
-          Login
-        </Link>
-      </div>
+        <div className="row">
+          <Link className="button primary" to="/login">
+            Login
+          </Link>
+        </div>
+      </StatusPanel>
     );
   }
 
   if (tokenDead) {
     return (
-      <div className="card confirm-panel">
-        <div className="big-check failed" aria-hidden="true">
-          !
-        </div>
-        <h1>This link no longer works</h1>
+      <StatusPanel illustration={<LinkExpired />} title="This link no longer works">
         <p>{error}</p>
-        <Link className="button primary" to="/forgot-password">
-          Request a new link
-        </Link>
-      </div>
+        <div className="row">
+          <Link className="button primary" to="/forgot-password">
+            Request a new link
+          </Link>
+        </div>
+      </StatusPanel>
     );
   }
 
   return (
-    <div className="login">
-      <div className="login-copy">
-        <h1>Set a new password</h1>
-        <p>Choose a new password for your Wellbeing Portal account.</p>
-      </div>
+    <StatusPanel illustration={<Privacy />} title="Set a new password">
+      <p className="muted">Choose a new password for your Student Wellbeing account.</p>
 
-      <div className="card login-card">
-        <h2>Reset password</h2>
-
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            void handleSubmit();
-          }}
-        >
-          <div className="field">
-            <label htmlFor="new-password">New password</label>
-            <div className="password-field">
-              <input
-                id="new-password"
-                type={showPassword ? "text" : "password"}
-                autoComplete="new-password"
-                minLength={8}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                required
-              />
-              <button
-                type="button"
-                className="password-toggle"
-                onClick={() => setShowPassword((v) => !v)}
-                aria-label={showPassword ? "Hide password" : "Show password"}
-              >
-                {showPassword ? "Hide" : "Show"}
-              </button>
-            </div>
-            <span className="field-hint">At least 8 characters.</span>
-          </div>
-
-          <div className="field">
-            <label htmlFor="confirm-password">Confirm password</label>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void handleSubmit();
+        }}
+      >
+        <div className="field">
+          <label htmlFor="new-password">New password</label>
+          <div className="password-field">
             <input
-              id="confirm-password"
+              id="new-password"
               type={showPassword ? "text" : "password"}
               autoComplete="new-password"
               minLength={8}
-              value={confirmPassword}
-              onChange={(event) => setConfirmPassword(event.target.value)}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
               required
             />
-            {confirmPassword && confirmPassword !== password && (
-              <span className="field-hint">Passwords do not match.</span>
-            )}
+            <button
+              type="button"
+              className="password-toggle"
+              onClick={() => setShowPassword((v) => !v)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+            >
+              {showPassword ? "Hide" : "Show"}
+            </button>
           </div>
+          <span className="field-hint">At least 8 characters.</span>
+        </div>
 
-          {error && <div className="alert error">{error}</div>}
+        <div className="field">
+          <label htmlFor="confirm-password">Confirm password</label>
+          <input
+            id="confirm-password"
+            type={showPassword ? "text" : "password"}
+            autoComplete="new-password"
+            minLength={8}
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+            aria-invalid={confirmPassword.length > 0 && confirmPassword !== password}
+            required
+          />
+          {confirmPassword && confirmPassword !== password && (
+            <span className="field-hint error-hint">Passwords do not match.</span>
+          )}
+        </div>
 
-          <button
-            className="button primary"
-            type="submit"
-            disabled={submitting || (confirmPassword.length > 0 && confirmPassword !== password)}
-            style={{ width: "100%" }}
-          >
-            {submitting ? "Resetting..." : "Reset password"}
-          </button>
-        </form>
-      </div>
-    </div>
+        {error && (
+          <div className="alert error" role="alert">
+            {error}
+          </div>
+        )}
+
+        <button
+          className="button primary block"
+          type="submit"
+          disabled={submitting || (confirmPassword.length > 0 && confirmPassword !== password)}
+        >
+          {submitting ? "Resetting..." : "Reset password"}
+        </button>
+      </form>
+    </StatusPanel>
   );
 }

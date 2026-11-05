@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { LinkExpired, VerifyEmail as VerifyEmailArt } from "../assets/illustrations";
+import { StatusPanel } from "../components/StatusPanel";
 import { api, ApiError } from "../api";
 
 type State = "working" | "done" | "expired" | "already" | "invalid";
@@ -33,59 +35,51 @@ export default function VerifyEmail() {
 
   if (state === "done") {
     return (
-      <div className="card confirm-panel">
-        <div className="big-check" aria-hidden="true">
-          &#10003;
-        </div>
-        <h1>Email verified</h1>
+      <StatusPanel illustration={<VerifyEmailArt done />} title="Email verified">
         <p>Your IIT (ISM) email has been verified. You can now log in.</p>
-        <Link className="button primary" to="/login">
-          Login
-        </Link>
-      </div>
+        <div className="row">
+          <Link className="button primary" to="/login">
+            Login
+          </Link>
+        </div>
+      </StatusPanel>
     );
   }
 
   if (state === "expired") {
     return (
-      <div className="card confirm-panel">
-        <div className="big-check failed" aria-hidden="true">
-          !
-        </div>
-        <h1>Verification link expired</h1>
+      <StatusPanel illustration={<LinkExpired />} title="Verification link expired">
         <p>Request a new one from the login page and try again.</p>
-        <Link className="button primary" to="/login">
-          Back to login
-        </Link>
-      </div>
+        <div className="row">
+          <Link className="button primary" to="/login">
+            Back to login
+          </Link>
+        </div>
+      </StatusPanel>
     );
   }
 
   if (state === "already") {
     return (
-      <div className="card confirm-panel">
-        <div className="big-check" aria-hidden="true">
-          &#10003;
-        </div>
-        <h1>Already verified</h1>
+      <StatusPanel illustration={<VerifyEmailArt done />} title="Already verified">
         <p>Your email is already verified. You can log in.</p>
-        <Link className="button primary" to="/login">
-          Login
-        </Link>
-      </div>
+        <div className="row">
+          <Link className="button primary" to="/login">
+            Login
+          </Link>
+        </div>
+      </StatusPanel>
     );
   }
 
   return (
-    <div className="card confirm-panel">
-      <div className="big-check failed" aria-hidden="true">
-        !
-      </div>
-      <h1>Invalid link</h1>
+    <StatusPanel illustration={<LinkExpired />} title="Invalid link">
       <p>This verification link is invalid.</p>
-      <Link className="button primary" to="/login">
-        Back to login
-      </Link>
-    </div>
+      <div className="row">
+        <Link className="button primary" to="/login">
+          Back to login
+        </Link>
+      </div>
+    </StatusPanel>
   );
 }
